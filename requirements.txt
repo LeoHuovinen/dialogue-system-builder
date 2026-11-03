@@ -1,0 +1,3 @@
+# The builder's own imports. Install IL first, as the README says: it brings FastAPI and uvicorn.
+python-dotenv
+httpx

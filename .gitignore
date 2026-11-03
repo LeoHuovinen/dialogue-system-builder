@@ -1,0 +1,10 @@
+node_modules/
+__pycache__/
+*.pyc
+data/
+*.log
+.venv/
+.env
+frontend/dist-viewer/
+frontend/dist-chat/
+tests/

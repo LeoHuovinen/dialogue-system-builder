@@ -1,0 +1,99 @@
+{
+  "PromptBlocks": {
+    "ConversationFramePrompt": "You work the counter at a busy fast food place. Cheerful. Each utterance is max 12 words.\nKeep your answer at max 2 sentences.",
+    "IllocutionaryPrompt": {
+      "0": "Ask pizza or burger.\n{pConversationStateRemainingQuestions}",
+      "1": "Ask which topping they want.\n{pConversationStateRemainingQuestions}",
+      "2": "Ask whether they want fries.\n{pConversationStateRemainingQuestions}",
+      "3": "Repeat the order; say it is coming.",
+      "4": ""
+    },
+    "question_prompt": "",
+    "memory_callback": {
+      "Base": "{pUserMemories}"
+    }
+  },
+  "ConversationStates": {
+    "0": {
+      "name": "Step 1",
+      "questions": [
+        {
+          "question": "Pizza or burger?",
+          "options": [
+            "Pizza",
+            "Burger"
+          ]
+        }
+      ],
+      "ConversationStateTransitionCriteria": [
+        {
+          "Analyzer": "CategoricalAnswerConversationStateTransitionCriteria",
+          "TargetConversationState": "1",
+          "Prompt": "Pizza"
+        },
+        {
+          "Analyzer": "CategoricalAnswerConversationStateTransitionCriteria",
+          "TargetConversationState": "2",
+          "Prompt": "Burger"
+        }
+      ],
+      "global_history_window": true,
+      "global_history_turns": 10
+    },
+    "1": {
+      "name": "Step 2",
+      "questions": [
+        "What topping would you like?"
+      ],
+      "ConversationStateTransitionCriteria": [
+        {
+          "Analyzer": "QuestionsAnsweredConversationStateTransitionCriteria",
+          "TargetConversationState": "3"
+        }
+      ],
+      "session_first_reply_flag": "ignore_EntryUtterance",
+      "global_history_window": true,
+      "global_history_turns": 10
+    },
+    "2": {
+      "name": "Step 3",
+      "questions": [
+        {
+          "question": "Fries with that?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ],
+      "ConversationStateTransitionCriteria": [
+        {
+          "Analyzer": "QuestionsAnsweredConversationStateTransitionCriteria",
+          "TargetConversationState": "3"
+        }
+      ],
+      "session_first_reply_flag": "ignore_EntryUtterance",
+      "global_history_window": true,
+      "global_history_turns": 10
+    },
+    "3": {
+      "name": "Step 4",
+      "ConversationStateTransitionCriteria": [
+        {
+          "Analyzer": "TurnCountConversationStateTransitionCriteria",
+          "TargetConversationState": "4",
+          "Prompt": "1"
+        }
+      ],
+      "session_first_reply_flag": "ignore_EntryUtterance",
+      "global_history_window": true,
+      "global_history_turns": 10
+    },
+    "4": {
+      "name": "Step 5",
+      "session_first_reply_flag": "ignore_EntryUtterance",
+      "global_history_window": true,
+      "global_history_turns": 10
+    }
+  }
+}

@@ -1,0 +1,169 @@
+{
+  "title": "Pizza or burger",
+  "style": "You work the counter at a busy fast food place. Cheerful. Each utterance is max 12 words.",
+  "memory": true,
+  "voice": "en-US-GuyNeural",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "position": {
+        "x": 0,
+        "y": 180
+      },
+      "data": {}
+    },
+    {
+      "id": "order",
+      "type": "step",
+      "position": {
+        "x": 240,
+        "y": 130
+      },
+      "data": {
+        "description": "Ask pizza or burger.",
+        "questions": [
+          {
+            "text": "Pizza or burger?",
+            "options": [
+              "Pizza",
+              "Burger"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "pizza",
+      "type": "step",
+      "position": {
+        "x": 820,
+        "y": 0
+      },
+      "data": {
+        "description": "Ask which topping they want.",
+        "questions": [
+          {
+            "text": "What topping would you like?",
+            "options": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "burger",
+      "type": "step",
+      "position": {
+        "x": 820,
+        "y": 330
+      },
+      "data": {
+        "description": "Ask whether they want fries.",
+        "questions": [
+          {
+            "text": "Fries with that?",
+            "options": [
+              "Yes",
+              "No"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "goodbye",
+      "type": "step",
+      "position": {
+        "x": 1400,
+        "y": 170
+      },
+      "data": {
+        "description": "Repeat the order; say it is coming.",
+        "questions": []
+      }
+    },
+    {
+      "id": "end",
+      "type": "end",
+      "position": {
+        "x": 1980,
+        "y": 190
+      },
+      "data": {}
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "start",
+      "target": "order",
+      "type": "deletable",
+      "data": {}
+    },
+    {
+      "id": "e2",
+      "source": "order",
+      "target": "pizza",
+      "type": "deletable",
+      "data": {
+        "when": "choice",
+        "questionIndex": 0,
+        "optionIndex": 0,
+        "option": "",
+        "sentence": "",
+        "rank": 0
+      }
+    },
+    {
+      "id": "e3",
+      "source": "order",
+      "target": "burger",
+      "type": "deletable",
+      "data": {
+        "when": "choice",
+        "questionIndex": 0,
+        "optionIndex": 1,
+        "option": "",
+        "sentence": "",
+        "rank": 1
+      }
+    },
+    {
+      "id": "e4",
+      "source": "pizza",
+      "target": "goodbye",
+      "type": "deletable",
+      "data": {
+        "when": "answered",
+        "sentence": "",
+        "option": "",
+        "rank": 0
+      }
+    },
+    {
+      "id": "e5",
+      "source": "burger",
+      "target": "goodbye",
+      "type": "deletable",
+      "data": {
+        "when": "answered",
+        "sentence": "",
+        "option": "",
+        "rank": 0
+      }
+    },
+    {
+      "id": "e6",
+      "source": "goodbye",
+      "target": "end",
+      "type": "deletable",
+      "data": {
+        "when": "exchanges",
+        "turns": 1,
+        "sentence": "",
+        "option": "",
+        "rank": 0
+      }
+    }
+  ]
+}

@@ -1,0 +1,1064 @@
+[
+  {
+    "key": "order",
+    "title": "Pizza or burger",
+    "description": "A choice splits the conversation. Pizza asks for a topping, burger asks about fries.",
+    "design": {
+      "title": "Pizza or burger",
+      "memory": true,
+      "voice": "en-US-GuyNeural",
+      "style": "You work the counter at a busy fast food place. Cheerful. Each utterance is max 12 words.",
+      "nodes": [
+        {
+          "id": "start",
+          "type": "start",
+          "position": {
+            "x": 0,
+            "y": 180
+          },
+          "data": {}
+        },
+        {
+          "id": "order",
+          "type": "step",
+          "position": {
+            "x": 240,
+            "y": 130
+          },
+          "data": {
+            "description": "Ask pizza or burger.",
+            "questions": [
+              {
+                "text": "Pizza or burger?",
+                "options": [
+                  "Pizza",
+                  "Burger"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "pizza",
+          "type": "step",
+          "position": {
+            "x": 820,
+            "y": 0
+          },
+          "data": {
+            "description": "Ask which topping they want.",
+            "questions": [
+              {
+                "text": "What topping would you like?",
+                "options": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "burger",
+          "type": "step",
+          "position": {
+            "x": 820,
+            "y": 330
+          },
+          "data": {
+            "description": "Ask whether they want fries.",
+            "questions": [
+              {
+                "text": "Fries with that?",
+                "options": [
+                  "Yes",
+                  "No"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "goodbye",
+          "type": "step",
+          "position": {
+            "x": 1400,
+            "y": 170
+          },
+          "data": {
+            "description": "Repeat the order; say it is coming."
+          }
+        },
+        {
+          "id": "end",
+          "type": "end",
+          "position": {
+            "x": 1980,
+            "y": 190
+          },
+          "data": {}
+        }
+      ],
+      "edges": [
+        {
+          "id": "e1",
+          "source": "start",
+          "target": "order",
+          "type": "deletable",
+          "data": {}
+        },
+        {
+          "id": "e2",
+          "source": "order",
+          "target": "pizza",
+          "type": "deletable",
+          "data": {
+            "when": "choice",
+            "questionIndex": 0,
+            "optionIndex": 0,
+            "option": "",
+            "sentence": "",
+            "rank": 0
+          }
+        },
+        {
+          "id": "e3",
+          "source": "order",
+          "target": "burger",
+          "type": "deletable",
+          "data": {
+            "when": "choice",
+            "questionIndex": 0,
+            "optionIndex": 1,
+            "option": "",
+            "sentence": "",
+            "rank": 1
+          }
+        },
+        {
+          "id": "e4",
+          "source": "pizza",
+          "target": "goodbye",
+          "type": "deletable",
+          "data": {
+            "when": "answered",
+            "sentence": "",
+            "option": "",
+            "rank": 0
+          }
+        },
+        {
+          "id": "e5",
+          "source": "burger",
+          "target": "goodbye",
+          "type": "deletable",
+          "data": {
+            "when": "answered",
+            "sentence": "",
+            "option": "",
+            "rank": 0
+          }
+        },
+        {
+          "id": "e6",
+          "source": "goodbye",
+          "target": "end",
+          "type": "deletable",
+          "data": {
+            "when": "exchanges",
+            "turns": 1,
+            "sentence": "",
+            "option": "",
+            "rank": 0
+          }
+        }
+      ]
+    }
+  },
+  {
+    "key": "travel",
+    "title": "Travel ticket",
+    "description": "Train, bus or plane. Each choice asks one thing of its own, then goodbye.",
+    "design": {
+      "title": "Travel ticket",
+      "memory": true,
+      "voice": "en-GB-SoniaNeural",
+      "style": "You are a travel agent at a ticket desk, patient and precise. Never say more than 15 words at once.",
+      "nodes": [
+        {
+          "id": "start",
+          "type": "start",
+          "position": {
+            "x": 0,
+            "y": 380
+          },
+          "data": {}
+        },
+        {
+          "id": "how",
+          "type": "step",
+          "position": {
+            "x": 240,
+            "y": 330
+          },
+          "data": {
+            "description": "Ask how they want to travel.",
+            "questions": [
+              {
+                "text": "Train, bus or plane?",
+                "options": [
+                  "Train",
+                  "Bus",
+                  "Plane"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "train",
+          "type": "step",
+          "position": {
+            "x": 820,
+            "y": 0
+          },
+          "data": {
+            "description": "Ask first or second class.",
+            "questions": [
+              {
+                "text": "First or second class?",
+                "options": [
+                  "First",
+                  "Second"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "bus",
+          "type": "step",
+          "position": {
+            "x": 820,
+            "y": 330
+          },
+          "data": {
+            "description": "Ask which stop they get on at.",
+            "questions": [
+              {
+                "text": "Which stop do you get on at?",
+                "options": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "plane",
+          "type": "step",
+          "position": {
+            "x": 820,
+            "y": 660
+          },
+          "data": {
+            "description": "Ask window or aisle seat.",
+            "questions": [
+              {
+                "text": "Window or aisle?",
+                "options": [
+                  "Window",
+                  "Aisle"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "goodbye",
+          "type": "step",
+          "position": {
+            "x": 1400,
+            "y": 370
+          },
+          "data": {
+            "description": "Confirm the ticket and say goodbye."
+          }
+        },
+        {
+          "id": "end",
+          "type": "end",
+          "position": {
+            "x": 1980,
+            "y": 390
+          },
+          "data": {}
+        }
+      ],
+      "edges": [
+        {
+          "id": "e1",
+          "source": "start",
+          "target": "how",
+          "type": "deletable",
+          "data": {}
+        },
+        {
+          "id": "e2",
+          "source": "how",
+          "target": "train",
+          "type": "deletable",
+          "data": {
+            "when": "choice",
+            "questionIndex": 0,
+            "optionIndex": 0,
+            "option": "",
+            "sentence": "",
+            "rank": 0
+          }
+        },
+        {
+          "id": "e3",
+          "source": "how",
+          "target": "bus",
+          "type": "deletable",
+          "data": {
+            "when": "choice",
+            "questionIndex": 0,
+            "optionIndex": 1,
+            "option": "",
+            "sentence": "",
+            "rank": 1
+          }
+        },
+        {
+          "id": "e4",
+          "source": "how",
+          "target": "plane",
+          "type": "deletable",
+          "data": {
+            "when": "choice",
+            "questionIndex": 0,
+            "optionIndex": 2,
+            "option": "",
+            "sentence": "",
+            "rank": 2
+          }
+        },
+        {
+          "id": "e5",
+          "source": "train",
+          "target": "goodbye",
+          "type": "deletable",
+          "data": {
+            "when": "answered",
+            "sentence": "",
+            "option": "",
+            "rank": 0
+          }
+        },
+        {
+          "id": "e6",
+          "source": "bus",
+          "target": "goodbye",
+          "type": "deletable",
+          "data": {
+            "when": "answered",
+            "sentence": "",
+            "option": "",
+            "rank": 0
+          }
+        },
+        {
+          "id": "e7",
+          "source": "plane",
+          "target": "goodbye",
+          "type": "deletable",
+          "data": {
+            "when": "answered",
+            "sentence": "",
+            "option": "",
+            "rank": 0
+          }
+        },
+        {
+          "id": "e8",
+          "source": "goodbye",
+          "target": "end",
+          "type": "deletable",
+          "data": {
+            "when": "exchanges",
+            "turns": 1,
+            "sentence": "",
+            "option": "",
+            "rank": 0
+          }
+        }
+      ]
+    }
+  },
+  {
+    "key": "exhibit",
+    "title": "Museum exhibit",
+    "description": "A dinosaur skeleton introduces itself. Two topics, three turns each, then goodbye.",
+    "design": {
+      "title": "Museum exhibit",
+      "memory": true,
+      "voice": "en-GB-RyanNeural",
+      "style": "Roleplay a dinosaur skeleton standing in a natural history museum, proud of its age. Keep every utterance under 15 words.",
+      "nodes": [
+        {
+          "id": "start",
+          "type": "start",
+          "position": {
+            "x": 0,
+            "y": 150
+          },
+          "data": {}
+        },
+        {
+          "id": "greet",
+          "type": "step",
+          "position": {
+            "x": 580,
+            "y": 100
+          },
+          "data": {
+            "description": "Introduce yourself as a dinosaur skeleton."
+          }
+        },
+        {
+          "id": "topic",
+          "type": "step",
+          "position": {
+            "x": 1160,
+            "y": 100
+          },
+          "data": {
+            "description": "Ask which they want to hear about.",
+            "questions": [
+              {
+                "text": "Want my life story or discovery story?",
+                "options": [
+                  "Life story",
+                  "Discovery story"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "lived",
+          "type": "step",
+          "position": {
+            "x": 1740,
+            "y": -30
+          },
+          "data": {
+            "description": "Tell how you lived as a dinosaur."
+          }
+        },
+        {
+          "id": "found",
+          "type": "step",
+          "position": {
+            "x": 1740,
+            "y": 230
+          },
+          "data": {
+            "description": "Tell how your fossil was found."
+          }
+        },
+        {
+          "id": "goodbye",
+          "type": "step",
+          "position": {
+            "x": 2320,
+            "y": 100
+          },
+          "data": {
+            "description": "Thank them and say goodbye."
+          }
+        },
+        {
+          "id": "end",
+          "type": "end",
+          "position": {
+            "x": 2900,
+            "y": 150
+          },
+          "data": {}
+        }
+      ],
+      "edges": [
+        {
+          "id": "e1",
+          "source": "start",
+          "target": "greet",
+          "type": "deletable",
+          "data": {}
+        },
+        {
+          "id": "e2",
+          "source": "greet",
+          "target": "topic",
+          "type": "deletable",
+          "data": {
+            "when": "exchanges",
+            "turns": 1,
+            "sentence": "",
+            "option": "",
+            "rank": 0
+          }
+        },
+        {
+          "id": "e3",
+          "source": "topic",
+          "target": "lived",
+          "type": "deletable",
+          "data": {
+            "when": "choice",
+            "questionIndex": 0,
+            "optionIndex": 0,
+            "option": "",
+            "sentence": "",
+            "rank": 0
+          }
+        },
+        {
+          "id": "e4",
+          "source": "topic",
+          "target": "found",
+          "type": "deletable",
+          "data": {
+            "when": "choice",
+            "questionIndex": 0,
+            "optionIndex": 1,
+            "option": "",
+            "sentence": "",
+            "rank": 1
+          }
+        },
+        {
+          "id": "e5",
+          "source": "lived",
+          "target": "goodbye",
+          "type": "deletable",
+          "data": {
+            "when": "exchanges",
+            "turns": 3,
+            "sentence": "",
+            "option": "",
+            "rank": 0
+          }
+        },
+        {
+          "id": "e6",
+          "source": "found",
+          "target": "goodbye",
+          "type": "deletable",
+          "data": {
+            "when": "exchanges",
+            "turns": 3,
+            "sentence": "",
+            "option": "",
+            "rank": 0
+          }
+        },
+        {
+          "id": "e7",
+          "source": "goodbye",
+          "target": "end",
+          "type": "deletable",
+          "data": {
+            "when": "exchanges",
+            "turns": 1,
+            "sentence": "",
+            "option": "",
+            "rank": 0
+          }
+        }
+      ]
+    }
+  },
+  {
+    "key": "coffee",
+    "title": "Coffee order",
+    "description": "Three questions in a row. Drink, size, then here or to go.",
+    "design": {
+      "title": "Coffee order",
+      "memory": true,
+      "voice": "en-AU-NatashaNeural",
+      "style": "Barista in a small café, warm and quick. Reply in at most 10 words.",
+      "nodes": [
+        {
+          "id": "start",
+          "type": "start",
+          "position": {
+            "x": 0,
+            "y": 60
+          },
+          "data": {}
+        },
+        {
+          "id": "drink",
+          "type": "step",
+          "position": {
+            "x": 240,
+            "y": 0
+          },
+          "data": {
+            "description": "Ask what they would like to drink.",
+            "questions": [
+              {
+                "text": "What would you like to drink?",
+                "options": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "size",
+          "type": "step",
+          "position": {
+            "x": 820,
+            "y": 0
+          },
+          "data": {
+            "description": "Ask what size they want.",
+            "questions": [
+              {
+                "text": "Small, medium or large?",
+                "options": [
+                  "Small",
+                  "Medium",
+                  "Large"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "where",
+          "type": "step",
+          "position": {
+            "x": 1400,
+            "y": 0
+          },
+          "data": {
+            "description": "Ask if it is for here or to go.",
+            "questions": [
+              {
+                "text": "For here or to go?",
+                "options": [
+                  "Here",
+                  "To go"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "goodbye",
+          "type": "step",
+          "position": {
+            "x": 1980,
+            "y": 0
+          },
+          "data": {
+            "description": "Repeat the order; say it's ready soon."
+          }
+        },
+        {
+          "id": "end",
+          "type": "end",
+          "position": {
+            "x": 2560,
+            "y": 40
+          },
+          "data": {}
+        }
+      ],
+      "edges": [
+        {
+          "id": "e1",
+          "source": "start",
+          "target": "drink",
+          "type": "deletable",
+          "data": {}
+        },
+        {
+          "id": "e2",
+          "source": "drink",
+          "target": "size",
+          "type": "deletable",
+          "data": {
+            "when": "answered",
+            "sentence": "",
+            "option": "",
+            "rank": 0
+          }
+        },
+        {
+          "id": "e3",
+          "source": "size",
+          "target": "where",
+          "type": "deletable",
+          "data": {
+            "when": "answered",
+            "sentence": "",
+            "option": "",
+            "rank": 0
+          }
+        },
+        {
+          "id": "e4",
+          "source": "where",
+          "target": "goodbye",
+          "type": "deletable",
+          "data": {
+            "when": "answered",
+            "sentence": "",
+            "option": "",
+            "rank": 0
+          }
+        },
+        {
+          "id": "e5",
+          "source": "goodbye",
+          "target": "end",
+          "type": "deletable",
+          "data": {
+            "when": "exchanges",
+            "turns": 1,
+            "sentence": "",
+            "option": "",
+            "rank": 0
+          }
+        }
+      ]
+    }
+  },
+  {
+    "key": "password",
+    "title": "Password",
+    "description": "Only the password “conversation” opens the secret page. Three wrong answers and they are told they failed.",
+    "design": {
+      "title": "Password",
+      "memory": true,
+      "voice": "en-US-JennyNeural",
+      "style": "You guard the door to a secret web page, calm and formal. Use no more than 10 words a turn.",
+      "nodes": [
+        {
+          "id": "start",
+          "type": "start",
+          "position": {
+            "x": 0,
+            "y": 130
+          },
+          "data": {}
+        },
+        {
+          "id": "ask",
+          "type": "step",
+          "position": {
+            "x": 240,
+            "y": 80
+          },
+          "data": {
+            "description": "Ask them for the password."
+          }
+        },
+        {
+          "id": "welcome",
+          "type": "step",
+          "position": {
+            "x": 820,
+            "y": -80
+          },
+          "data": {
+            "description": "Tell them they have logged in. Welcome them."
+          }
+        },
+        {
+          "id": "failed",
+          "type": "step",
+          "position": {
+            "x": 820,
+            "y": 250
+          },
+          "data": {
+            "description": "Say they failed the password in three turns."
+          }
+        },
+        {
+          "id": "end",
+          "type": "end",
+          "position": {
+            "x": 1400,
+            "y": -40
+          },
+          "data": {}
+        },
+        {
+          "id": "end2",
+          "type": "end",
+          "position": {
+            "x": 1400,
+            "y": 290
+          },
+          "data": {}
+        }
+      ],
+      "edges": [
+        {
+          "id": "e1",
+          "source": "start",
+          "target": "ask",
+          "type": "deletable",
+          "data": {}
+        },
+        {
+          "id": "e2",
+          "source": "ask",
+          "target": "welcome",
+          "type": "deletable",
+          "data": {
+            "when": "sentence",
+            "sentence": "conversation",
+            "turns": 1,
+            "option": "",
+            "rank": 0
+          }
+        },
+        {
+          "id": "e3",
+          "source": "ask",
+          "target": "failed",
+          "type": "deletable",
+          "data": {
+            "when": "exchanges",
+            "turns": 3,
+            "sentence": "",
+            "option": "",
+            "rank": 1
+          }
+        },
+        {
+          "id": "e4",
+          "source": "welcome",
+          "target": "end",
+          "type": "deletable",
+          "data": {
+            "when": "exchanges",
+            "turns": 1,
+            "sentence": "",
+            "option": "",
+            "rank": 0
+          }
+        },
+        {
+          "id": "e5",
+          "source": "failed",
+          "target": "end2",
+          "type": "deletable",
+          "data": {
+            "when": "exchanges",
+            "turns": 1,
+            "sentence": "",
+            "option": "",
+            "rank": 0
+          }
+        }
+      ]
+    }
+  },
+  {
+    "key": "vending",
+    "title": "Vending machine",
+    "description": "Coffee, tea or water. Each choice gets its own goodbye and its own End.",
+    "design": {
+      "title": "Vending machine",
+      "memory": true,
+      "voice": "en-IE-ConnorNeural",
+      "style": "Roleplay a talking vending machine in a school corridor, chirpy and mechanical. Say at most 9 words each time.",
+      "nodes": [
+        {
+          "id": "start",
+          "type": "start",
+          "position": {
+            "x": 0,
+            "y": 120
+          },
+          "data": {}
+        },
+        {
+          "id": "pick",
+          "type": "step",
+          "position": {
+            "x": 240,
+            "y": 70
+          },
+          "data": {
+            "description": "Ask what they want from the machine.",
+            "questions": [
+              {
+                "text": "Coffee, tea or water?",
+                "options": [
+                  "Coffee",
+                  "Tea",
+                  "Water"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "coffee",
+          "type": "step",
+          "position": {
+            "x": 820,
+            "y": -180
+          },
+          "data": {
+            "description": "Say here is the coffee and say goodbye."
+          }
+        },
+        {
+          "id": "tea",
+          "type": "step",
+          "position": {
+            "x": 820,
+            "y": 70
+          },
+          "data": {
+            "description": "Say here is the tea and say goodbye."
+          }
+        },
+        {
+          "id": "water",
+          "type": "step",
+          "position": {
+            "x": 820,
+            "y": 320
+          },
+          "data": {
+            "description": "Say here is the water and say goodbye."
+          }
+        },
+        {
+          "id": "end",
+          "type": "end",
+          "position": {
+            "x": 1400,
+            "y": -140
+          },
+          "data": {}
+        },
+        {
+          "id": "end2",
+          "type": "end",
+          "position": {
+            "x": 1400,
+            "y": 110
+          },
+          "data": {}
+        },
+        {
+          "id": "end3",
+          "type": "end",
+          "position": {
+            "x": 1400,
+            "y": 360
+          },
+          "data": {}
+        }
+      ],
+      "edges": [
+        {
+          "id": "e1",
+          "source": "start",
+          "target": "pick",
+          "type": "deletable",
+          "data": {}
+        },
+        {
+          "id": "e2",
+          "source": "pick",
+          "target": "coffee",
+          "type": "deletable",
+          "data": {
+            "when": "choice",
+            "questionIndex": 0,
+            "optionIndex": 0,
+            "option": "",
+            "sentence": "",
+            "rank": 0
+          }
+        },
+        {
+          "id": "e3",
+          "source": "pick",
+          "target": "tea",
+          "type": "deletable",
+          "data": {
+            "when": "choice",
+            "questionIndex": 0,
+            "optionIndex": 1,
+            "option": "",
+            "sentence": "",
+            "rank": 1
+          }
+        },
+        {
+          "id": "e4",
+          "source": "pick",
+          "target": "water",
+          "type": "deletable",
+          "data": {
+            "when": "choice",
+            "questionIndex": 0,
+            "optionIndex": 2,
+            "option": "",
+            "sentence": "",
+            "rank": 2
+          }
+        },
+        {
+          "id": "e5",
+          "source": "coffee",
+          "target": "end",
+          "type": "deletable",
+          "data": {
+            "when": "exchanges",
+            "turns": 1,
+            "sentence": "",
+            "option": "",
+            "rank": 0
+          }
+        },
+        {
+          "id": "e6",
+          "source": "tea",
+          "target": "end2",
+          "type": "deletable",
+          "data": {
+            "when": "exchanges",
+            "turns": 1,
+            "sentence": "",
+            "option": "",
+            "rank": 0
+          }
+        },
+        {
+          "id": "e7",
+          "source": "water",
+          "target": "end3",
+          "type": "deletable",
+          "data": {
+            "when": "exchanges",
+            "turns": 1,
+            "sentence": "",
+            "option": "",
+            "rank": 0
+          }
+        }
+      ]
+    }
+  }
+]

@@ -1,0 +1,33 @@
+<!doctype html>
+<!-- The dialogue system builder's flow viewer (flow/) and its chat (chat/), side by side, over IL's press-to-speak mount
+     (server_press_to_speak.py): hold the button to speak; the current node lit as the conversation moves, the phase on the
+     viewer, what was heard and the replies in the chat. text.html and pipecat.html are the same page over IL's other two mounts. -->
+<meta charset="utf-8">
+<title>flow viewer and chat, press-to-speak</title>
+<style>body{margin:0;height:100vh;display:flex;background:#1d1d1d;color:#ddd;font:14px system-ui;overflow:hidden}#nodes{flex:1;min-width:0}#chat{width:26rem;flex-shrink:0;border-left:1px solid #2d2d2d}
+#top{position:absolute;top:8px;left:8px;z-index:2}</style>
+<div id="nodes"></div><div id="chat"></div><div id="top"><button id="start">Start</button> <button id="talk" disabled>Hold to speak</button> <button id="click-talk" disabled>Click to speak</button> <span id="phase">not connected</span></div><div class="kara" style="right:26rem"></div>
+<script type="module">
+  import "./log.js";                             // the two log streams, in the browser console: recorded events and adapter callbacks, each on its own
+  import { ConnectConversation } from "./ConnectConversation.js";
+  import { Karaoke } from "./karaoke.js";                  // the karaoke, the assistant's words as spoken and the person's as heard
+  import { mountFlowViewer } from "./flow/flow-viewer.js";   // a view: start(), adapterCallback(), phase()
+  import { mountFlowChat } from "./chat/flow-chat.js";        // a view: start(), userMessage(), botMessage()
+  const design = await (await fetch("design.json")).json();
+  const nodes = mountFlowViewer(document.getElementById("nodes"), { src: "flow/viewer.html", design });
+  const chat = mountFlowChat(document.getElementById("chat"), { src: "chat/chat.html" });
+  const karaoke = Karaoke([document.querySelector(".kara")], {   // the karaoke's look on this page
+    botFontSize: "22px",                                    // the assistant's line, the largest size of its words
+    botWordsColour: "#63e9bc",                              // its words as they are said; those not yet said are slightly dimmer
+    botTextOutline: "0 1px 6px #000000a6",                  // the glow that keeps them readable
+    personFontSize: "22px",                                 // the person's line: the largest size of their words
+    personWordsColour: "#fbd76a",                           // their words as they are heard
+    personTextOutline: "0 1px 6px #000000a6",               // the glow that keeps them readable
+  });
+  const showPhaseWord = true;                             // show the listening / thinking / speaking word
+  const phaseWordColour = "#dddddd";                      // its colour
+  Object.assign(document.getElementById("phase").style, { display: showPhaseWord ? "" : "none", color: phaseWordColour });
+  document.getElementById("start").onclick = () => ConnectConversation({   // the microphone opens from a click: Safari and iOS want a gesture
+    way: "press", talk: "#talk", clickTalk: "#click-talk", phase: "#phase", views: [karaoke, nodes, chat],
+  });
+</script>

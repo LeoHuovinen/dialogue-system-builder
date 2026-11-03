@@ -1,0 +1,303 @@
+"""The dialogue system builder's server, ``build`` and ``serve``, a FastAPI app with IL's text mount on it at "/ws" and, with
+voice on, IL's voice mount on Pipecat's runner app, plus the builder's own routes for its pages, its checks and its
+testing links.
+
+The dialogue system builder is made to run with Illocutionary Lifecycles (IL), which it cannot run without, and in it a person
+draws a conversation as steps and lines on a canvas, compiles it to the flow IL runs, and talks to it through IL's
+mounts, and this module, in the server folder ``dialogue_system_builder``, is the server the builder's pages talk to, the editor
+at "/", a testing link's page at "/try/<token>" and its results at "/results/<token>". Every conversation goes through
+IL's topology and nothing else, the page's ``ConnectConversation.js`` from IL speaking the wire of IL's mount, the mount
+building the session and its adapter, and the adapter talking to IL's ``SessionProvider``. The page reserves each
+session first at ``/api/sessions``, as ``dialogue_system_builder.mounts`` explains. The builder's routes never hold a
+conversation, they check, compile, keep testing links and read finished records.
+
+The server keeps nothing about its visitors and runs as one process with its files in one folder, which is all a
+person on localhost needs and all someone hosting it has to back up. Every setting is an argument of ``serve`` or a
+variable IL reads from the environment, as the README's part on the ``.env`` file lists. ``server.py`` calls ``serve``.
+"""
+from __future__ import annotations
+
+import datetime
+import logging
+import os
+import sys
+import uuid
+from typing import Any
+
+# The repository root, which holds the frontend build and the dialogue_system_builder package.
+_HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
+from fastapi import APIRouter, Request  # noqa: E402
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse  # noqa: E402
+
+from illocutionary_lifecycles.server.adapters.flow_adapters.SaveLoadFlowAdapter import SaveLoadFlowAdapter  # noqa: E402
+
+from dialogue_system_builder import share, store  # noqa: E402
+from dialogue_system_builder.checks import validate_design  # noqa: E402
+from dialogue_system_builder.compile import CompileError, compile_design  # noqa: E402
+from dialogue_system_builder.mounts import DialogueSystemBuilderTextAdapterWebsocketMount, ReserveDialogueSystemBuilderConversationSession  # noqa: E402
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+VOICE = True
+app = None
+VOICE_MOUNT = None
+
+_DIST = os.path.join(_HERE, "frontend", "dist")
+
+# IL's mounts require a flow at construction, and no connection runs this one, since every session is the reserved one.
+_NO_FLOW = {"PromptBlocks": {}, "ConversationStates": {}}
+
+
+async def _json_body(request: Request) -> Any:
+    """Return the request's JSON body, or ``None`` when it is not JSON."""
+    try:
+        return await request.json()
+    except (ValueError, UnicodeDecodeError):
+        return None
+
+
+def _no_design() -> JSONResponse:
+    """Return the 400 answer for a body that holds no design."""
+    return JSONResponse({"ok": False, "error": "no design"}, status_code=400)
+
+
+@router.post("/api/sessions")
+async def reserve_session(request: Request):
+    """Reserve one conversation session and return ``{"ok", "session_id", "endings"}``, the id the page connects to
+    IL's mount with and the indexes of the design's End steps. The body is ``{"way", "design"}`` for the designer's own
+    Start, where ``way`` is "text" or "voice", or ``{"way", "token"}`` for a run through a testing link, which runs the
+    server's stored copy of the link's design and is text only. Answers 404 "This link does not exist." for an unknown
+    link and 400 with the check's findings for a design that cannot run on that way."""
+    body = await _json_body(request)
+    if not isinstance(body, dict):
+        return _no_design()
+    way = "voice" if body.get("way") == "voice" else "text"
+    token = str(body.get("token") or "") or None
+    if way == "voice" and not VOICE:
+        return JSONResponse({"ok": False, "error": "this server runs on text alone"}, status_code=400)
+    if token:
+        link = share.TestingLinkDesign(token)
+        if link is None:
+            return JSONResponse({"ok": False, "error": "This link does not exist."}, status_code=404)
+        if way != "text":
+            return JSONResponse({"ok": False, "error": "testing links are text only"}, status_code=400)
+        design = link["design"]
+    else:
+        design = body.get("design")
+        if not isinstance(design, dict):
+            return _no_design()
+    checked = validate_design(design, require_voice=(way == "voice"))
+    if not checked["ok"]:
+        return JSONResponse(checked, status_code=400)
+    session_id = ReserveDialogueSystemBuilderConversationSession(design, way, token)
+    return JSONResponse({"ok": True, "session_id": session_id, "endings": compile_design(design)["endings"]})
+
+
+_VOICES: list[dict] = []
+
+
+@router.get("/api/voices")
+async def voices():
+    """Return every English voice the Azure Speech region offers, for the design's voice choice, fetched once and kept
+    in memory, or 502 with the error when the list cannot be fetched, as on a server with no speech key."""
+    global _VOICES
+    if not _VOICES:
+        import httpx
+        region = os.environ.get("AZURE_SPEECH_REGION", "")
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                r = await client.get(f"https://{region}.tts.speech.microsoft.com/cognitiveservices/voices/list",
+                                     headers={"Ocp-Apim-Subscription-Key": os.environ.get("AZURE_SPEECH_KEY", "")})
+                r.raise_for_status()
+            _VOICES = sorted(({"name": v["ShortName"], "locale": v["Locale"], "localeName": v.get("LocaleName", v["Locale"]),
+                               "displayName": v.get("DisplayName", v["ShortName"]), "gender": v.get("Gender", "")}
+                              for v in r.json() if str(v.get("Locale", "")).lower().startswith("en-")),
+                             key=lambda v: (v["locale"], v["name"]))
+        except Exception as exc:  # the list is a convenience, and text conversations need none of it
+            logger.warning("voice list unavailable: %s", exc)
+            return JSONResponse({"voices": [], "error": str(exc)}, status_code=502)
+    return JSONResponse({"voices": _VOICES})
+
+
+@router.post("/api/generate")
+async def generate(request: Request):
+    """Return a whole design generated from the body's ``description`` by ``dialogue_system_builder.generate.generate_design``,
+    with the findings of the builder's check beside it under their own key."""
+    from dialogue_system_builder.generate import GenerateError, generate_design
+    body = await _json_body(request)
+    try:
+        design = await generate_design(str((body or {}).get("description") or ""))
+    except (GenerateError, RuntimeError) as exc:   # RuntimeError is IL's own when no model is configured
+        return JSONResponse({"ok": False, "error": str(exc)})
+    checked = validate_design(design, require_voice=False)
+    return JSONResponse({"ok": True, "design": design, "findings": checked["findings"], "refusal": checked["refusal"]})
+
+
+@router.post("/api/share")
+async def share_design(request: Request):
+    """Store the body's ``design`` behind a testing link, the existing one named by ``token`` or a new one, and return
+    ``{"token", "link", "url"}``, where ``url`` names the host the request reached, so the link works for others behind
+    a proxy that passes ``X-Forwarded-Proto`` and ``Host``. Answers 400 for a design that does not compile."""
+    body = await _json_body(request)
+    if not isinstance(body, dict) or not isinstance(body.get("design"), dict):
+        return _no_design()
+    try:
+        compile_design(body["design"])
+    except CompileError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    token = share.SaveTestingLink(body["design"], str(body.get("label") or ""), str(body.get("token") or "") or None)
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+    host = request.headers.get("host") or request.url.netloc
+    return JSONResponse({"token": token, "link": f"/try/{token}", "url": f"{proto}://{host}/try/{token}"})
+
+
+@router.get("/api/share/counts")
+async def share_counts(tokens: str = ""):
+    """Return ``{"counts": {token: runs}}`` for the comma-separated ``tokens``, the page's "tried ×N"."""
+    return JSONResponse({"counts": {t: share.TestingLinkRunCount(t) for t in tokens.split(",") if t}})
+
+
+@router.get("/api/share/{token}/design")
+async def shared_design(token: str):
+    """Return the design and label behind the testing link ``token``, or 404 for an unknown link."""
+    link = share.TestingLinkDesign(token)
+    if link is None:
+        return JSONResponse({"error": "unknown link"}, status_code=404)
+    return JSONResponse({"design": link["design"], "label": link.get("label") or ""})
+
+
+@router.get("/api/share/{token}/runs")
+async def shared_runs(token: str):
+    """Return ``{"token", "runs"}``, every run through the testing link ``token``, or 404 for an unknown link."""
+    if share.TestingLinkDesign(token) is None:
+        return JSONResponse({"error": "unknown link"}, status_code=404)
+    return JSONResponse({"token": token, "runs": share.TestingLinkRuns(token)})
+
+
+@router.get("/health")
+async def health():
+    """Return ``{"ok": true}`` while the server answers."""
+    return JSONResponse({"ok": True})
+
+
+@router.get("/api/capabilities")
+async def capabilities():
+    """Return ``{"voice", "text"}``, what this server can start, so the page greys out the Start it cannot serve."""
+    return JSONResponse({"voice": VOICE, "text": True})
+
+
+@router.post("/api/flow")
+async def flow(request: Request):
+    """Return the design in the body compiled to IL's flow, saved through IL's ``SaveLoadFlowAdapter`` under
+    ``<DIALOGUE_SYSTEM_BUILDER_DATA>/flows`` and sent as a file named after the design's title, the file a server hands to IL's mounts
+    as it is. Answers 400 with the check's findings for a design that cannot run."""
+    design = await _json_body(request)
+    if not isinstance(design, dict):
+        return _no_design()
+    checked = validate_design(design, require_voice=False)
+    if not checked["ok"]:
+        return JSONResponse(checked, status_code=400)
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    path = os.path.join(store.data_dir(), "flows", f"{stamp}-{uuid.uuid4().hex[:8]}.json")
+    SaveLoadFlowAdapter().save_flow(compile_design(design)["bundle"], path)
+    name = "".join(c if c.isalnum() or c in "-_ " else "" for c in str(design.get("title") or "")).strip() or "flow"
+    return FileResponse(path, media_type="application/json", filename=f"{name}.json")
+
+
+@router.post("/api/validate")
+async def validate(request: Request):
+    """Return the builder's check of the design in the body, ``{"ok", "findings", "refusal"}``, with ``?mode=text`` for
+    a Start with text only, which needs no voice, and ``?quick=1`` to leave out IL's session start, for the page's
+    colouring of the Start buttons on every edit."""
+    design = await _json_body(request)
+    if not isinstance(design, dict):
+        return _no_design()
+    return JSONResponse(validate_design(design, require_voice=(request.query_params.get("mode") != "text"),
+                                        quick=request.query_params.get("quick") == "1"))
+
+
+def _page(name: str):
+    """Return the built page ``name`` from ``frontend/dist``, or a note that the page is not built yet."""
+    path = os.path.join(_DIST, name)
+    if os.path.isfile(path):
+        return FileResponse(path, media_type="text/html")
+    return JSONResponse({"ok": True, "frontend": "not built yet"})
+
+
+@router.get("/")
+async def index():
+    """The editor page."""
+    return _page("index.html")
+
+
+@router.get("/viewer.html")
+async def viewer():
+    """The flow viewer alone, the builder's canvas in conversation mode, driven by the page that embeds it."""
+    return _page("viewer.html")
+
+
+@router.get("/flow-viewer.js")
+async def flow_viewer_js():
+    """The script whose ``mountFlowViewer`` embeds the viewer in any page as one view of IL's ``ConnectConversation``."""
+    return FileResponse(os.path.join(_DIST, "flow-viewer.js"), media_type="text/javascript")
+
+
+@router.get("/try/{token}")
+async def try_page(token: str):
+    """The tester's page of the testing link ``token``, or a 404 page for an unknown link."""
+    if share.TestingLinkDesign(token) is None:
+        return HTMLResponse("<p>This link does not exist.</p>", status_code=404)
+    return _page("try.html")
+
+
+@router.get("/results/{token}")
+async def results_page(token: str):
+    """The page of the testers' conversations through the link ``token``, or a 404 page for an unknown link."""
+    if share.TestingLinkDesign(token) is None:
+        return HTMLResponse("<p>This link does not exist.</p>", status_code=404)
+    return _page("results.html")
+
+
+def build(voice: bool = True, stt_vendor: str = "azure") -> Any:
+    """Return the app with IL's mounts and every builder route on it. With ``voice`` on the app is Pipecat's runner app
+    with IL's voice mount, using ``stt_vendor`` for STT, and without it the app is a bare FastAPI and Pipecat is never
+    imported. Either way IL's text mount is at "/ws" and the built pages' ``assets`` and ``il`` folders are served, the
+    second holding IL's page scripts. Called by ``serve``."""
+    global VOICE, app, VOICE_MOUNT
+    VOICE = bool(voice)
+    if VOICE:
+        from pipecat.runner.run import app as runner_app
+
+        from dialogue_system_builder.voice_mount import DialogueSystemBuilderPipecatVoiceAdapterWebRtcMount
+        app = runner_app
+        VOICE_MOUNT = DialogueSystemBuilderPipecatVoiceAdapterWebRtcMount(_NO_FLOW, STTVendor=stt_vendor)
+        VOICE_MOUNT.MountOnApp(app)
+    else:
+        from fastapi import FastAPI
+        app = FastAPI()
+        VOICE_MOUNT = None
+    DialogueSystemBuilderTextAdapterWebsocketMount(_NO_FLOW).MountOnApp(app, "/ws")
+    app.include_router(router)
+    from fastapi.staticfiles import StaticFiles
+    for folder in ("assets", "il"):
+        if os.path.isdir(os.path.join(_DIST, folder)):
+            app.mount(f"/{folder}", StaticFiles(directory=os.path.join(_DIST, folder)), name=folder)
+    return app
+
+
+def serve(voice: bool = True, host: str = "127.0.0.1", port: int = 8200, data_dir: str | None = None,
+          stt_vendor: str = "azure") -> None:
+    """Run the dialogue system builder on ``host`` and ``port`` until it is stopped. With ``voice`` on, IL's voice mount runs
+    Pipecat's runner, which replaces ``sys.argv`` with its own arguments. With ``voice`` off, uvicorn runs the app on
+    text alone. ``data_dir`` sets ``DIALOGUE_SYSTEM_BUILDER_DATA``, where sessions, flows and testing links are kept."""
+    if data_dir:
+        os.environ["DIALOGUE_SYSTEM_BUILDER_DATA"] = data_dir
+    build(voice, stt_vendor)
+    if VOICE:
+        VOICE_MOUNT.StartWebRtcServerProcess(VOICE_MOUNT.Attend, host=host, port=port)
+    else:
+        import uvicorn
+        uvicorn.run(app, host=host, port=port, log_level="warning")

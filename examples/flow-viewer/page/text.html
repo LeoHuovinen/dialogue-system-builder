@@ -1,0 +1,19 @@
+<!doctype html>
+<!-- The dialogue system builder's flow viewer (flow/) and its chat (chat/), side by side, over IL's text mount (server_text.py):
+     the current node lit as the conversation moves, the typed lines and the replies in the chat. press-to-speak.html and
+     pipecat.html are the same page over IL's other two mounts. -->
+<meta charset="utf-8">
+<title>flow viewer and chat, text</title>
+<style>body{margin:0;height:100vh;display:flex;background:#1d1d1d;overflow:hidden}#nodes{flex:1;min-width:0}#chat{width:26rem;flex-shrink:0;border-left:1px solid #2d2d2d}</style>
+<div id="nodes"></div><div id="chat"></div>
+<script type="module">
+  import "./log.js";                             // the two log streams, in the browser console: recorded events and adapter callbacks, each on its own
+  import { ConnectConversation } from "./ConnectConversation.js";
+  import { mountFlowViewer } from "./flow/flow-viewer.js";   // a view: start(), adapterCallback()
+  import { mountFlowChat } from "./chat/flow-chat.js";        // a view: start(), userMessage(), botMessage(); its input types the lines
+  const design = await (await fetch("design.json")).json();
+  const nodes = mountFlowViewer(document.getElementById("nodes"), { src: "flow/viewer.html", design });
+  let conversation;
+  const chat = mountFlowChat(document.getElementById("chat"), { src: "chat/chat.html", typing: true, onSend: (text) => conversation.sendText(text) });
+  conversation = await ConnectConversation({ way: "text", views: [nodes, chat] });
+</script>
