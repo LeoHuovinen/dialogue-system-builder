@@ -130,10 +130,72 @@ function RunsDialog({ ConversationDesignPublicLinkToken, label, onClose }) {
   );
 }
 
-// One saved conversation's row, one line of the label, Copy link, and, once someone has tried it,
+// The popup behind the API button. The saved design answers OpenAI-format requests at this server's "/v1" with its
+// ConversationDesignAPIKey as the bearer, as dialogue_system_builder/mounts.py explains, so the popup shows OpenAI's own
+// quickstart for the chosen language with this address and this key filled in, one box and one Copy at a time. The box
+// is the text that is copied, so what is pasted is what was read.
+const API_TEXT = "Your conversation is an API now. Pick what you are building, press Copy, paste it, and it runs. Only your newest "
+  + "message is read, the conversation itself is kept here. Send END to start over, HELP for the rules. One key is one "
+  + "conversation at a time.";
+const apiSnippets = (base, key) => ({
+  "Python": `from openai import OpenAI\nclient = OpenAI(base_url="${base}", api_key="${key}")\nresponse = client.responses.create(model="dialogue-system-builder", input="Hello")`,
+  "JavaScript": `import OpenAI from "openai";\nconst client = new OpenAI({ baseURL: "${base}", apiKey: "${key}", dangerouslyAllowBrowser: true });\nconst response = await client.responses.create({ model: "dialogue-system-builder", input: "Hello" });`,
+  "Unity": `UnityWebRequest www = UnityWebRequest.Post("${base}/responses", "{\\"input\\": \\"Hello\\"}", "application/json");\nwww.SetRequestHeader("Authorization", "Bearer ${key}");\nyield return www.SendWebRequest();\nstring reply = www.downloadHandler.text;`,
+  "curl": `curl ${base}/responses \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer ${key}" \\\n  -d '{"input": "Hello"}'`,
+});
+function ApiDialog({ c, onClose }) {
+  const boxRef = useRef(null);
+  const [pick, setPick] = useState("Python");
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    const onDown = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) onClose(); };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [onClose]);
+  const base = `${location.origin}/v1`;
+  const snippets = apiSnippets(base, c.ConversationDesignAPIKey);
+  const copy = () => {
+    if (!navigator.clipboard) { window.prompt("Copy this:", snippets[pick]); return; }
+    navigator.clipboard.writeText(snippets[pick]); setCopied(true); setTimeout(() => setCopied(false), 1500);
+  };
+  return createPortal(
+    <div className="fixed inset-y-0 left-0 z-50 flex items-center justify-center" style={{ right: "26rem", background: "var(--scrim)" }} data-testid="api-dialog">
+      <div ref={boxRef} className="flex flex-col gap-4 border p-5" style={{ width: 800, maxWidth: "calc(100% - 2rem)", background: "var(--dialog)", borderColor: "var(--line)" }}>
+        <div className="truncate text-base font-medium">Use as an API: {c.label}</div>
+        <div className="text-xs muted">{API_TEXT}</div>
+        <div className="flex flex-col gap-1 text-xs" data-testid="api-values">
+          <div className="flex gap-2"><span className="w-16 shrink-0 muted select-none">Base URL</span><span className="font-mono">{base}</span></div>
+          <div className="flex gap-2"><span className="w-16 shrink-0 muted select-none">API key</span><span className="font-mono">{c.ConversationDesignAPIKey}</span></div>
+        </div>
+        <div className="flex gap-1">
+          {Object.keys(snippets).map((name) => (
+            <button type="button" key={name} onClick={() => setPick(name)} data-testid="api-pick" data-picked={name === pick}
+              className="rounded-lg border px-2 py-1.5 text-xs transition hover:border-teal-600"
+              style={{ borderColor: name === pick ? "rgb(13,148,136)" : "var(--line)", background: name === pick ? "rgba(17,94,89,.35)" : "rgb(31,31,31)" }}>
+              {name}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-start gap-2">
+          <div className="grid min-w-0 flex-1 rounded-lg border px-2 py-1.5" style={{ borderColor: "var(--line)", background: "rgb(31,31,31)", paddingBottom: "calc(0.375rem + 1rem)" }}>
+            {Object.entries(snippets).map(([name, text]) => (
+              <pre key={name} className="font-mono text-xs" data-testid={name === pick ? "api-snippet" : undefined}
+                style={{ gridArea: "1 / 1", margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-all", visibility: name === pick ? "visible" : "hidden" }}>{text}</pre>
+            ))}
+          </div>
+          <button type="button" className="btn btn-teal shrink-0 px-2 py-0 text-xs self-stretch" onClick={copy} data-testid="api-copy">{copied ? "Copied" : "Copy"}</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+// One saved conversation's row, one line of the label, Copy link, API, and, once someone has tried it,
 // "tried ×N" in place of delete, which opens the testers' conversations in the popup above.
 export function SavedRow({ c, isCurrent, count, onLoad, onDelete }) {
   const [open, setOpen] = useState(false);
+  const [apiOpen, setApiOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   // The testing link is text only, so it can be copied only when the saved design passes the
   // builder's own text-mode check, the same one the Start buttons use, green when it does and grey when not.
@@ -174,12 +236,17 @@ export function SavedRow({ c, isCurrent, count, onLoad, onDelete }) {
             {copied ? "Copied" : "Copy link"}
           </button>
         )}
+        {c.shareUrl && c.ConversationDesignAPIKey && textOk && (
+          <button type="button" className="btn btn-other shrink-0 px-2 py-0 text-xs" onClick={() => setApiOpen(true)} data-testid="api-open"
+            title="OpenAI-format requests with this design's key run this design">API</button>
+        )}
         {count > 0
           ? <button type="button" className="btn shrink-0 px-2 py-0 text-xs" onClick={() => setOpen(!open)}
               title="Others have tried this through its link, so it cannot be deleted" data-testid="saved-locked">tried ×{count}</button>
           : <button type="button" className="btn px-2 py-0 text-xs text-red-400" onClick={onDelete} aria-label="Delete">✕</button>}
       </div>
       {open && <RunsDialog ConversationDesignPublicLinkToken={c.shareToken} label={c.label} onClose={() => setOpen(false)} />}
+      {apiOpen && <ApiDialog c={c} onClose={() => setApiOpen(false)} />}
     </div>
   );
 }

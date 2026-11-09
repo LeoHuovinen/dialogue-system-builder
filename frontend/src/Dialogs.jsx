@@ -38,7 +38,7 @@ export function VoiceStartDialog({ onStart, onCancel }) {
       stopRef.current = () => {
         stopped = true;
         cancelAnimationFrame(raf);
-        try { ctx.close(); } catch {}
+        if (ctx.state !== "closed") ctx.close().catch(() => {});   // close() is a promise, and the context may already be closed
         stream.getTracks().forEach((t) => { try { t.stop(); } catch {} });
       };
     })();

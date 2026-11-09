@@ -60,6 +60,17 @@ A conversation consists of states connected by transitions. Each state has a nat
 
 Conversations run in text or voice mode. IL executes the design while the editor highlights the active state and transition, as in the recording at the top. The same view and chat also run in a custom frontend, over the text WebSocket or WebRTC voice, without the editor.
 
+### OpenAI-compatible endpoint
+
+<p align="center"><img alt="Two panels linked by three arrows. On the left an OpenAI-format client, stateless, with the logos of n8n, LangChain, Ollama, Unity, Android Studio and Xcode, the request in the Chat Completions format with the API key, and the conversation as plain chat turns. On the right the IL engine, holding the session state and memory, with the API key it issued, the live session, the current illocutionary state, the turn count, the last user turn, the reply written, activity bars that pulse while a turn is processed, and the idle timer counting down in green seconds from 180. The top arrow carries the API key from IL to the client. The middle arrow carries each request to IL as two stacked bubbles, the API key and the message, and on arrival the issued key blinks once in green with the note that an ongoing session key was detected. The bottom arrow carries the reply back, and every request resets the timer." src="readme-screenshots/api-endpoint.gif" width="100%"></p>
+
+**OpenAI-compatible endpoint.** A saved design answers requests in the format of OpenAI's API. Anything built for that API, a library, a no-code tool or a game engine, talks to the design once its base URL points at this server.
+
+Saving a design gives it a `ConversationDesignAPIKey`. A request carrying that key as the bearer runs one turn of that design.
+
+OpenAI's quickstart for Python, JavaScript, Unity or curl runs the design once the server's address and the key are filled in. Hosting notes are in [`README-HOSTING.md`](README-HOSTING.md).
+
+
 ## Installation
 
 Requirements are Python 3.11 or newer and an API key for Azure OpenAI or an OpenAI-compatible service. Node.js is not required.
@@ -116,6 +127,7 @@ All of these are under **Saved conversations** in the sidebar.
 | To keep it | Save the current conversation, and later Save (overwrite) or Save as new | Saved in this browser only |
 | To move it to another browser or computer | Export design, Import design | A `.design.json` file of the canvas |
 | To run it outside the builder | Download flow | A flow file that IL can run directly on any client, such as a browser, a native app or a robot. See [Run a conversation](https://github.com/LeoHuovinen/illocutionary-lifecycles#run-a-conversation) in IL's README |
+| To call it from your own code or tool | API | The server's address and the saved design's `ConversationDesignAPIKey`, and OpenAI's quickstart for Python, JavaScript, Unity or curl with both filled in. Paste it and it runs the design. See [`README-HOSTING.md`](README-HOSTING.md) |
 
 ## Hosting and user tests
 

@@ -31,14 +31,14 @@ The `ConversationDesignPublicLinkToken` in the link is public and opens the chat
 
 ### The endpoint at /v1
 
-The same `ConversationDesignAPIKey` is the bearer of a request to `/v1/chat/completions` or `/v1/responses`, in the request and reply formats of OpenAI's API, so a tool written for that API runs the design once its base URL points at this server and its key field holds the `ConversationDesignAPIKey`. The endpoint is IL's `HTTPEndpointMount`. IL's mount serves one flow and accepts any bearer, and the builder stores many designs, so the builder's `DialogueSystemBuilderHTTPEndpointMount` fills in the two methods IL leaves to the server, refusing a bearer that is no stored design's key and building each conversation on the design the key belongs to. The conversation is kept on the server between requests, one per key, and each turn is stored and listed on the design's results page like a run through its testing link. The nginx example under Hosting on a server forwards every path, `/v1/` included, so no extra block is needed. If the site is behind a browser login, put `auth_basic off;` in a `location /v1/` block, since a bearer client cannot answer a login prompt. The rules of the conversation, the commands and the reply fields are in IL's [`README-HTTPEndpointMount.md`](https://github.com/LeoHuovinen/illocutionary-lifecycles/blob/main/illocutionary_lifecycles/server/adapter_mounts/http_mounts/README-HTTPEndpointMount.md), which is also the endpoint's reply to the command `HELP`.
+The same `ConversationDesignAPIKey` is the bearer of a request to `/v1/chat/completions` or `/v1/responses`, in the request and reply formats of OpenAI's API, so a tool written for that API runs the design once its base URL points at this server and its key field holds the `ConversationDesignAPIKey`. The endpoint is IL's `HTTPEndpointMount`. IL's mount serves one flow and accepts any bearer, and the builder stores many designs, so the builder's `DialogueSystemBuilderHTTPEndpointMount` fills in the two methods IL leaves to the server, refusing a bearer that is no stored design's key and building each conversation on the design the key belongs to. The conversation is kept on the server between requests, one per key, and each turn is stored and listed on the design's results page like a run through its testing link. The **API** button on a saved design's row shows the address, the key, and OpenAI's quickstart for Python, JavaScript, Unity or curl with both filled in. The nginx example under Hosting on a server forwards every path, `/v1/` included, so no extra block is needed. If the site is behind a browser login, put `auth_basic off;` in a `location /v1/` block, since a bearer client cannot answer a login prompt. The rules of the conversation, the commands and the reply fields are in IL's [`README-HTTPEndpointMount.md`](https://github.com/LeoHuovinen/illocutionary-lifecycles/blob/main/illocutionary_lifecycles/server/adapter_mounts/http_mounts/README-HTTPEndpointMount.md), which is also the endpoint's reply to the command `HELP`.
 
 ### Voice on a server
 
 To use WebRTC voice, install the voice extra as [`README.md`](README.md) describes. You also need:
 
 - **HTTPS.** Browsers open the microphone only on HTTPS or on localhost. Put a reverse proxy such as Caddy or nginx in front of the port, and have it pass WebSockets and set `X-Forwarded-Proto`, so that links use the correct address.
-- **A TURN server for visitors on restrictive networks, such as campus or mobile networks.** Set `TURN_URL` in `.env`. Without one, voice works only where the browser can reach the server directly.
+- **A TURN server for visitors on restrictive networks, such as campus or mobile networks.** Set `TURN_URL` in `.env`. Without one, voice works only where the browser can reach the server directly. With a hosted relay that issues short lived credentials, set `RELAY_CREDENTIALS_URL`, the address that answers a POST with the standard `iceServers` list, and `RELAY_CREDENTIALS_TOKEN`, its bearer token, instead. The builder then fetches the credentials itself and renews them every twelve hours.
 
 Here is an example nginx configuration. Start the builder with `--host 127.0.0.1` and fill in your own domain and certificate. Voice audio doesn't pass through nginx.
 
@@ -73,12 +73,12 @@ Reloading nginx drops the WebSockets of live conversations, so reload only when 
 
 An earlier version ran on one small Linux server with this setup:
 
-- nginx in front of the builder on `127.0.0.1:8200`, with Cloudflare handling HTTPS.
+- nginx in front of the builder on `127.0.0.1:8200`, with a CDN handling HTTPS.
 - A systemd service with `Restart=always`, instead of `tmux`.
 - One shared login with nginx basic auth, for the whole page.
 - A limit of 6 requests a minute per visitor on `/api/generate`, because each request calls the model.
 - A daily `rsync` copy of the data folder to another machine.
-- A hosted TURN relay from Cloudflare for voice.
+- A hosted TURN relay for voice.
 
 ## Using the viewer and chat in a custom frontend
 

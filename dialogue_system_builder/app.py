@@ -279,8 +279,8 @@ async def results_page(ConversationDesignPublicLinkToken: str):
 
 def build(voice: bool = True, stt_vendor: str = "azure") -> Any:
     """Return the app with IL's mounts and every builder route on it. With ``voice`` on the app is Pipecat's runner app
-    with IL's voice mount, using ``stt_vendor`` for STT, and without it the app is a bare FastAPI and Pipecat is never
-    imported. In both cases IL's text mount is at "/ws", the builder's OpenAI-compatible endpoint mount is at "/v1", and the
+    with IL's voice mount, using ``stt_vendor`` for STT, and the relay credentials of ``dialogue_system_builder.relay`` kept
+    fresh when ``.env`` names a relay that issues credentials, and without it the app is a bare FastAPI and Pipecat is never imported. In both cases IL's text mount is at "/ws", the builder's OpenAI-compatible endpoint mount is at "/v1", and the
     built pages' ``assets`` and ``il`` folders are served, the second holding IL's page scripts. Called by ``serve``."""
     global VOICE, app, VOICE_MOUNT
     VOICE = bool(voice)
@@ -288,7 +288,9 @@ def build(voice: bool = True, stt_vendor: str = "azure") -> Any:
         from pipecat.runner.run import app as runner_app
 
         from dialogue_system_builder.voice_mount import DialogueSystemBuilderPipecatVoiceAdapterWebRtcMount
+        from dialogue_system_builder.relay import KeepRelayCredentialsFresh
         app = runner_app
+        KeepRelayCredentialsFresh()   # TURN_URL fetched from the relay named in .env and kept within its lifetime
         VOICE_MOUNT = DialogueSystemBuilderPipecatVoiceAdapterWebRtcMount(_NO_FLOW, STTVendor=stt_vendor)
         VOICE_MOUNT.MountOnApp(app)
     else:
