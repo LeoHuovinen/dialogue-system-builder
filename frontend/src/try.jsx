@@ -1,10 +1,10 @@
-// The page of one testing link, /try/<token>, where a tester talks to the saved conversation behind the link. The
+// The page of one testing link, /try/<ConversationDesignPublicLinkToken>, where a tester talks to the saved conversation behind the link. The
 // dialogue system builder is made to run with Illocutionary Lifecycles (IL), which it cannot run without, and in it a
 // person draws a conversation as steps and lines on a canvas, compiles it to the flow IL runs, and talks to it
 // through IL's mounts, and this page is the editor's own sidebar without the canvas, with the same Start check and
-// the same Conversation component. The design is fetched from /api/share/<token>/design only to check it and to
+// the same Conversation component. The design is fetched from /api/share/<ConversationDesignPublicLinkToken>/design only to check it and to
 // name the steps, and the conversation itself runs the server's stored copy, because Conversation reserves the
-// session with the token and never sends a design. A testing link is text only.
+// session with the ConversationDesignPublicLinkToken and never sends a design. A testing link is text only.
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { Toaster } from "sonner";
@@ -14,7 +14,7 @@ import { api } from "./api";
 import { Conversation } from "./Conversation";
 import { FindingsList, startCheck } from "./StartCheck";
 
-const token = location.pathname.split("/").filter(Boolean).pop() || "";
+const ConversationDesignPublicLinkToken = location.pathname.split("/").filter(Boolean).pop() || "";
 
 function TrySidebar() {
   const mode = useStore((s) => s.mode);
@@ -28,7 +28,7 @@ function TrySidebar() {
   const [findings, setFindings] = useState([]);
 
   useEffect(() => {
-    fetch(`/api/share/${token}/design`)
+    fetch(`/api/share/${ConversationDesignPublicLinkToken}/design`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("This link does not exist."))))
       .then((j) => {
         useStore.getState().loadDesign(j.design);
@@ -44,7 +44,7 @@ function TrySidebar() {
   if (mode === "conversation") {
     return (
       <aside className="flex w-[26rem] shrink-0 select-none flex-col overflow-y-auto border-x" style={{ borderColor: "var(--raised)" }} data-testid="sidebar">
-        <Conversation token={token} />
+        <Conversation ConversationDesignPublicLinkToken={ConversationDesignPublicLinkToken} />
       </aside>
     );
   }

@@ -2,7 +2,7 @@
 // page. The dialogue system builder is made to run with Illocutionary Lifecycles (IL), which it cannot run without, and in
 // it a person draws a conversation as steps and lines on a canvas, compiles it to the flow IL runs, and talks to
 // it through IL's mounts, and this component is the one place a page of the builder talks. The component first reserves the
-// session at the builder's /api/sessions, with the canvas's design or, on a testing link's page, the link's token,
+// session at the builder's /api/sessions, with the canvas's design or, on a testing link's page, the link's ConversationDesignPublicLinkToken,
 // and gets a session id and the indexes of the End steps. The component then connects through IL's own
 // ConnectConversation.js, served by the builder at /il/, on the text mount at /ws?session_id=... or on the Pipecat
 // voice mount with the session id in the offer's request data. Everything shown arrives as one view of that
@@ -27,7 +27,7 @@ function questionsOf(state, index) {
   return (node?.data?.questions || []).map((q) => (typeof q === "string" ? q : q?.text || ""));
 }
 
-export function Conversation({ token = null }) {
+export function Conversation({ ConversationDesignPublicLinkToken = null }) {
   const toDesign = useStore((s) => s.toDesign);
   const setMode = useStore((s) => s.setMode);
   const setLive = useStore((s) => s.setLive);
@@ -48,7 +48,7 @@ export function Conversation({ token = null }) {
     (async () => {
       try {
         const r = await fetch("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(token ? { way, token } : { way, design: toDesign() }) });
+          body: JSON.stringify(ConversationDesignPublicLinkToken ? { way, ConversationDesignPublicLinkToken } : { way, design: toDesign() }) });
         const reserved = await r.json().catch(() => ({}));
         if (!r.ok) {
           (reserved.findings || []).forEach((f) => (f.level === "error" ? toast.error(f.text) : toast.warning(f.text)));
@@ -107,7 +107,7 @@ export function Conversation({ token = null }) {
   return (
     <section className="relative flex min-h-0 flex-1 flex-col" data-testid="conversation" data-phase={phase} data-way={way}>
       <div className="flex items-center gap-2 border-b px-4 py-3" style={{ borderColor: "var(--raised)" }}>
-        {!token && <button type="button" className="action-btn action-btn--ghost action-btn--sm" onClick={backToEdit} data-testid="back">Back to edit</button>}
+        {!ConversationDesignPublicLinkToken && <button type="button" className="action-btn action-btn--ghost action-btn--sm" onClick={backToEdit} data-testid="back">Back to edit</button>}
         <div className="font-medium">Conversation</div>
         <div className="flex-1" />
         {phase === "connecting" && <span className="connecting-label" data-testid="connecting"><span className="spinner" />Connecting…</span>}
@@ -117,7 +117,7 @@ export function Conversation({ token = null }) {
           </button>
         )}
       </div>
-      {!token && (
+      {!ConversationDesignPublicLinkToken && (
         <div className="border-b px-4 py-2 text-xs" style={{ background: "rgb(48,48,48)", borderColor: "var(--line)" }} data-testid="voice-readonly">
           <div><span className="muted">Voice </span>{voice || <span className="muted italic">none</span>}</div>
           <div><span className="muted">System prompt </span>{style || <span className="muted italic">none</span>}</div>

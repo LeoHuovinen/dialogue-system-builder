@@ -1,17 +1,20 @@
 """The dialogue system builder's testing links, ``SaveTestingLink``, ``TestingLinkDesign``, ``TestingLinkRuns`` and
-``TestingLinkRunCount``, which give a saved conversation a link others can try it through, at ``/try/<token>``, and a
-page of their conversations, at ``/results/<token>``.
+``TestingLinkRunCount``, which give a saved conversation a link others can try it through, at ``/try/<ConversationDesignPublicLinkToken>``, and a
+page of their conversations, at ``/results/<ConversationDesignPublicLinkToken>``.
 
 The dialogue system builder is made to run with Illocutionary Lifecycles (IL), which it cannot run without, and in it a person
 draws a conversation as steps and lines on a canvas, compiles it to the flow IL runs, and talks to it through IL's
 mounts, and this module, in the server folder ``dialogue_system_builder``, keeps the designs behind the links and lists the runs
-made through them. There are no accounts, so the link is the access. A run through a link is an ordinary IL session,
-reserved by ``dialogue_system_builder.mounts.ReserveDialogueSystemBuilderConversationSession`` with the link's token and connected
+made through them. There are no accounts. The link code opens the chat page. A saved conversation's API key, kept in the
+same file as it is, is what a Save that changes the conversation must present, and Save makes it together with the
+file. A run through a link is an ordinary IL session,
+reserved by ``dialogue_system_builder.mounts.ReserveDialogueSystemBuilderConversationSession`` with the link's ConversationDesignPublicLinkToken and connected
 through IL's text mount like the designer's own Start, on the server's stored copy of the design. This module writes
 one JSON file per link under ``<DIALOGUE_SYSTEM_BUILDER_DATA>/shares``, and reads finished sessions back through IL's read-only
 storage vendor "local-readonly". A run is read once and kept in memory until its stored events change, so the page's
 run counts stay cheap however many runs a link has. The runs of a link are the stored sessions whose id is exactly
-"try-<token>-<way>-<hex>", the shape ``dialogue_system_builder.mounts.DialogueSystemBuilderConversationSessionId`` gives. The routes that
+"try-", the ConversationDesignPublicLinkToken, "-" and a hex suffix, the shape ``dialogue_system_builder.mounts.DialogueSystemBuilderConversationSessionId``
+gives, and the earlier shape with "text-" or "voice-" before the suffix is still read. The routes that
 call this module are in ``dialogue_system_builder.app``.
 """
 from __future__ import annotations
@@ -19,6 +22,7 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import string
 import time
 from typing import Any
 
@@ -29,51 +33,76 @@ from dialogue_system_builder.compile import compile_design
 _READ_RUNS: dict[str, tuple[float, dict[str, Any] | None]] = {}
 
 
-def _link_path(token: str) -> str | None:
-    """Return the file of the link ``token``, or ``None`` when ``token`` holds anything but letters, digits, "-" and
-    "_", so a token can never name a path outside the folder."""
-    if not token or not token.replace("-", "").replace("_", "").isalnum():
+def _link_path(ConversationDesignPublicLinkToken: str) -> str | None:
+    """Return the file of the link ``ConversationDesignPublicLinkToken``, or ``None`` when ``ConversationDesignPublicLinkToken`` holds anything but letters, digits, "-" and
+    "_", so a ConversationDesignPublicLinkToken can never name a path outside the folder."""
+    if not ConversationDesignPublicLinkToken or not ConversationDesignPublicLinkToken.replace("-", "").replace("_", "").isalnum():
         return None
     folder = os.path.join(store.data_dir(), "shares")
     os.makedirs(folder, exist_ok=True)
-    return os.path.join(folder, f"{token}.json")
+    return os.path.join(folder, f"{ConversationDesignPublicLinkToken}.json")
 
 
-def TestingLinkDesign(token: str) -> dict[str, Any] | None:
-    """Return the stored link ``token`` as a dict with ``design``, ``label`` and ``shared_at``, or ``None`` for an
-    unknown or malformed token."""
-    path = _link_path(token)
+def TestingLinkDesign(ConversationDesignPublicLinkToken: str) -> dict[str, Any] | None:
+    """Return the stored link ``ConversationDesignPublicLinkToken`` as a dict with ``design``, ``label``, ``shared_at`` and
+    ``ConversationDesignAPIKey``, or ``None`` for an unknown or malformed link code. A link saved before API keys existed
+    has no ``ConversationDesignAPIKey`` until its next Save, which makes it."""
+    path = _link_path(ConversationDesignPublicLinkToken)
     if not path or not os.path.isfile(path):
         return None
     with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
-def SaveTestingLink(design: dict[str, Any], label: str, token: str | None = None) -> str:
-    """Store ``design`` and ``label`` behind the link ``token`` when that link exists, so a later Save of the same
-    conversation updates the design behind its link and keeps its runs, or behind a new random token otherwise, and
-    return the token."""
-    if not (token and TestingLinkDesign(token) is not None):
-        token = secrets.token_urlsafe(9)
-    with open(_link_path(token), "w", encoding="utf-8") as f:
-        json.dump({"design": design, "label": str(label or "")[:200], "shared_at": time.time()}, f)
-    return token
+def SaveTestingLink(design: dict[str, Any], label: str, ConversationDesignPublicLinkToken: str | None = None) -> str:
+    """Store ``design`` and ``label`` behind the link ``ConversationDesignPublicLinkToken`` when that link exists, so a later Save of the same
+    conversation updates the design behind its link and keeps its runs and its ``ConversationDesignAPIKey``, or behind a new
+    random link code otherwise. When the link has no API key, because it is new or was saved before API keys existed, this
+    function makes one, "sk-" and 48 random letters and digits, OpenAI's key format so that a tool written for OpenAI's API
+    accepts it in its key setting, and the ``/api/share`` route returns it to the browser that saved. The route, not this
+    function, decides whether a Save may change an existing link. Returns the link code."""
+    link = TestingLinkDesign(ConversationDesignPublicLinkToken) if ConversationDesignPublicLinkToken else None
+    if link is None:
+        ConversationDesignPublicLinkToken, link = secrets.token_urlsafe(9), {}
+    link.update({"design": design, "label": str(label or "")[:200], "shared_at": time.time()})
+    if not link.get("ConversationDesignAPIKey"):
+        alphabet = string.ascii_letters + string.digits
+        link["ConversationDesignAPIKey"] = "sk-" + "".join(secrets.choice(alphabet) for _ in range(48))
+    with open(_link_path(ConversationDesignPublicLinkToken), "w", encoding="utf-8") as f:
+        json.dump(link, f)
+    return ConversationDesignPublicLinkToken
 
 
-def _session_ids_of(token: str) -> list[str]:
-    """Return the stored sessions of the link ``token``, oldest first. A token may itself hold "-", so a session
-    belongs to the link only when what follows the prefix is exactly "<way>-<hex>"."""
+def ConversationDesignAPIKey(ConversationDesignPublicLinkToken: str) -> str | None:
+    """Return the API key of the link ``ConversationDesignPublicLinkToken``, or ``None`` when the link is unknown or was
+    saved before API keys existed and not saved since. The ``/api/share`` route compares the header of a Save against it."""
+    return (TestingLinkDesign(ConversationDesignPublicLinkToken) or {}).get("ConversationDesignAPIKey") or None
+
+
+def _is_run_suffix(rest: str) -> bool:
+    """Return whether ``rest``, what follows "try-", the ConversationDesignPublicLinkToken and "-" in a session id, is hex alone or "text-" or
+    "voice-" and hex."""
+    parts = rest.split("-")
+    hex_digits = "0123456789abcdef"
+    tail = parts[-1]
+    well_formed = bool(tail) and all(c in hex_digits for c in tail)
+    return well_formed and (len(parts) == 1 or (len(parts) == 2 and parts[0] in ("text", "voice")))
+
+
+def _session_ids_of(ConversationDesignPublicLinkToken: str) -> list[str]:
+    """Return the stored sessions of the link ``ConversationDesignPublicLinkToken``, oldest first. A ConversationDesignPublicLinkToken may itself hold "-", so a session
+    belongs to the link only when what follows the prefix is hex alone, or "text-" or "voice-" and hex, the shape of
+    sessions stored before the way left the id."""
     sessions = store.sessions_dir()
     if not os.path.isdir(sessions):
         return []
-    prefix = f"try-{token}-"
-    mine = [s for s in os.listdir(sessions) if s.startswith(prefix)
-            and len(s[len(prefix):].split("-")) == 2 and s[len(prefix):].split("-")[0] in ("text", "voice")]
+    prefix = f"try-{ConversationDesignPublicLinkToken}-"
+    mine = [s for s in os.listdir(sessions) if s.startswith(prefix) and _is_run_suffix(s[len(prefix):])]
     return sorted(mine, key=lambda s: os.path.getmtime(os.path.join(sessions, s)))
 
 
 def _read_run(session_id: str) -> dict[str, Any] | None:
-    """Return one stored session as a dict with ``session``, ``way``, ``last_state``, ``started`` and ``turns``, or
+    """Return one stored session as a dict with ``session``, ``last_state``, ``started`` and ``turns``, or
     ``None`` when the tester said nothing or IL refuses to reopen it, reading it again only when its events changed."""
     from illocutionary_lifecycles.core.session_provider import SessionProvider
     from illocutionary_lifecycles.server.adapter_callback_handlers.AdapterCallbackHandlerHelpers import turns
@@ -96,24 +125,24 @@ def _read_run(session_id: str) -> dict[str, Any] | None:
     if any(t["role"] == "user" for t in said):
         changes = event_streams(provider).get("ConversationStateEvent") or []
         stamps = [e.stat().st_mtime for e in os.scandir(events)] if changed else []
-        run = {"session": session_id, "way": session_id.rsplit("-", 2)[-2],
+        run = {"session": session_id,
                "last_state": str(changes[-1].get("conversation_state", 0)) if changes else "0",
                "started": min(stamps) if stamps else changed, "turns": said}
     _READ_RUNS[session_id] = (changed, run)
     return run
 
 
-def TestingLinkRuns(token: str) -> list[dict[str, Any]]:
-    """Return every run through the link ``token`` in which the tester said something, oldest first, each a dict with
-    ``session``, ``way``, ``ended``, whether it reached an End step of the link's design, ``started`` and ``turns``."""
-    link = TestingLinkDesign(token)
+def TestingLinkRuns(ConversationDesignPublicLinkToken: str) -> list[dict[str, Any]]:
+    """Return every run through the link ``ConversationDesignPublicLinkToken`` in which the tester said something, oldest first, each a dict with
+    ``session``, ``ended``, whether it reached an End step of the link's design, ``started`` and ``turns``."""
+    link = TestingLinkDesign(ConversationDesignPublicLinkToken)
     if link is None:
         return []
     endings = compile_design(link["design"])["endings"]
-    runs = [r for r in (_read_run(s) for s in _session_ids_of(token)) if r]
+    runs = [r for r in (_read_run(s) for s in _session_ids_of(ConversationDesignPublicLinkToken)) if r]
     return [{**{k: v for k, v in r.items() if k != "last_state"}, "ended": r["last_state"] in endings} for r in runs]
 
 
-def TestingLinkRunCount(token: str) -> int:
-    """Return how many runs the link ``token`` has, for the page's "tried ×N", without compiling its design."""
-    return sum(1 for s in _session_ids_of(token) if _read_run(s))
+def TestingLinkRunCount(ConversationDesignPublicLinkToken: str) -> int:
+    """Return how many runs the link ``ConversationDesignPublicLinkToken`` has, for the page's "tried ×N", without compiling its design."""
+    return sum(1 for s in _session_ids_of(ConversationDesignPublicLinkToken) if _read_run(s))

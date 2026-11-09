@@ -36,8 +36,13 @@ which Export design writes and Import design loads back, and it differs from a f
 to run and which cannot be loaded back. A step is a node with a prompt, which the compiler makes one of IL's conversation
 states. A line is an edge between nodes, which becomes one entry of ``ConversationStateTransitionCriteria``. End is a
 node IL does not know, which the builder marks by the state indexes ``dialogue_system_builder.compile.compile_design`` returns as
-``endings``. A reservation is a design kept for one coming connection. A testing link is the token behind
-``/try/<token>`` and ``/results/<token>``, made by Save, and a run is one tester's conversation through it.
+``endings``. A reservation is a design kept for one coming connection. A testing link is "/try/" followed by the
+``ConversationDesignPublicLinkToken``, made by Save and passed on to everyone who is to try the design, so the link is public
+and opens the chat page and nothing else. A saved design also has a ``ConversationDesignAPIKey``, "sk-" and 48 random letters
+and digits in OpenAI's key format, made at Save and returned only to the browser that saved. A later Save of that design must
+present the key, so holding the link alone does not allow overwriting the design. The key is written as it is into the
+design's JSON file, so whoever runs the server can read it there when helping the person who saved. A run is one finished or
+unfinished conversation a person had with the design through its link.
 
 A ``data-testid`` in the page files is a stable name for that element, for programs that drive the pages.
 """

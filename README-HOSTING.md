@@ -27,6 +27,8 @@ To change where conversations are saved, set `memory_vendor` in `dialogue_system
 <p align="center"><img alt="The testing view, a plain chat with no canvas" src="readme-screenshots/tester-chat.png" width="40%"></p>
 <p align="center"><sub>The tester's view at <code>/try/&lt;code&gt;</code>. <code>/results/&lt;code&gt;</code> shows what they said.</sub></p>
 
+The `ConversationDesignPublicLinkToken` in the link is public and opens the chat page only. Each saved design also has a `ConversationDesignAPIKey`, `sk-` and 48 letters and digits, made at Save and returned to the browser that saved. A later Save of the same design must send it in the header `X-Conversation-Design-API-Key`, or the server refuses to change the design. The key is kept as it is in the link's JSON file under `<DIALOGUE_SYSTEM_BUILDER_DATA>/shares`, so the person hosting can read it there. A link saved before keys existed gets its key at its next Save, from whichever browser saves first.
+
 ### Voice on a server
 
 To use WebRTC voice, install the voice extra as [`README.md`](README.md) describes. You also need:

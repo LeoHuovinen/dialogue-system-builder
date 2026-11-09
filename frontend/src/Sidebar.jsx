@@ -3,8 +3,8 @@
 // and lines on a canvas, compiles it to the flow IL runs, and talks to it through IL's mounts, and this file is where a
 // design is started, loaded, saved and exported. The shapes add nodes to the canvas, the templates come from
 // templates.json, and Describe a conversation asks the server for a whole design. Saved conversations live in this
-// browser's localStorage under "course-builder.saved-conversations", a key SharedRuns.jsx shares, and Save also makes the
-// testing link through SharedRuns.jsx. Download flow writes IL's flow, which a server hands to IL's mounts and which cannot
+// browser's localStorage under "course-builder.saved-conversations", a key SharedRuns.jsx shares, each entry id, savedAt,
+// label, design, shareToken, shareUrl and ConversationDesignAPIKey, and Save also makes the testing link through SharedRuns.jsx. Download flow writes IL's flow, which a server hands to IL's mounts and which cannot
 // be loaded back, and Export design writes the canvas's design, which Import design loads back. Imported by App.jsx, which
 // lists the editor's parts.
 import { useEffect, useMemo, useState } from "react";

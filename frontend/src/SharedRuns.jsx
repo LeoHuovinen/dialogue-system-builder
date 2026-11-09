@@ -1,8 +1,10 @@
 // The testing links of the saved conversations in the editor's sidebar, and the box of the testers' conversations
 // shown in the sidebar's popup and on the results page. Designs live in this browser's localStorage and there are no
-// accounts, so the link is the access. Whoever has the link can try the conversation as text, through IL's text mount like
-// any Start, and see what the testers said. Save posts the design to the builder's /api/share, which keeps it behind
-// the link, and a saved conversation someone has tried cannot be deleted here. The localStorage key
+// accounts. Whoever has the link can try the conversation as text, through IL's text mount like any Start, and see what
+// was said. Save posts the design to the builder's /api/share, which keeps it behind the link and answers with the link's
+// ConversationDesignAPIKey, kept in the entry as ConversationDesignAPIKey. A later Save of the same design sends it in
+// X-Conversation-Design-API-Key, since the server refuses to change a link without it. A saved design someone has tried
+// cannot be deleted here. The localStorage key
 // "course-builder.saved-conversations" is shared with Sidebar.jsx, and the run counts refresh every 15 seconds while the
 // page is open. Imported by Sidebar.jsx and results.jsx, and dialogue_system_builder/share.py explains the links on the server.
 import { useEffect, useRef, useState } from "react";
@@ -19,19 +21,24 @@ const updateSaved = (id, patch) => {
   setSaved(next);
 };
 // Save makes the testing link. The first save of a conversation creates it, and later saves update the
-// design behind the same link, where the runs already made stay listed.
+// design behind the same link, where the runs already made stay listed. The entry's ConversationDesignAPIKey goes along
+// in X-Conversation-Design-API-Key, and the server's reply refreshes it.
 export async function shareSaved(id) {
   const entry = useStore.getState().saved.find((c) => c.id === id);
   if (!entry) return;
   try {
-    const r = await fetch("/api/share", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ design: entry.design, label: entry.label, token: entry.shareToken || undefined }) });
+    const headers = { "Content-Type": "application/json" };
+    if (entry.ConversationDesignAPIKey) headers["X-Conversation-Design-API-Key"] = entry.ConversationDesignAPIKey;
+    const r = await fetch("/api/share", { method: "POST", headers,
+      body: JSON.stringify({ design: entry.design, label: entry.label, ConversationDesignPublicLinkToken: entry.shareToken || undefined }) });
     const j = await r.json().catch(() => ({}));
-    if (r.ok && j.token) updateSaved(id, { shareToken: j.token, shareUrl: j.url });
+    if (r.ok && j.ConversationDesignPublicLinkToken) {
+      updateSaved(id, { shareToken: j.ConversationDesignPublicLinkToken, shareUrl: j.url, ConversationDesignAPIKey: j.ConversationDesignAPIKey });
+    }
   } catch {}
 }
-const fetchRuns = async (token) => {
-  const r = await fetch(`/api/share/${token}/runs`);
+const fetchRuns = async (ConversationDesignPublicLinkToken) => {
+  const r = await fetch(`/api/share/${ConversationDesignPublicLinkToken}/runs`);
   if (!r.ok) throw new Error(r.status === 404 ? "That testing link does not exist." : `Could not load the runs (${r.status}).`);
   return (await r.json()).runs || [];
 };
@@ -40,16 +47,16 @@ const fetchRuns = async (token) => {
 // open, through the one cheap count route.
 export function useRunCounts(saved) {
   const [counts, setCounts] = useState({});
-  const tokens = [...new Set(saved.map((c) => c.shareToken).filter(Boolean))].join(",");
+  const links = [...new Set(saved.map((c) => c.shareToken).filter(Boolean))].join(",");
   useEffect(() => {
-    if (!tokens) return undefined;
+    if (!links) return undefined;
     let live = true;
-    const load = () => fetch(`/api/share/counts?tokens=${encodeURIComponent(tokens)}`).then((r) => r.json())
+    const load = () => fetch(`/api/share/counts?links=${encodeURIComponent(links)}`).then((r) => r.json())
       .then((j) => { if (live) setCounts(j.counts || {}); }).catch(() => {});
     load();
     const t = setInterval(load, 15000);
     return () => { live = false; clearInterval(t); };
-  }, [tokens]);
+  }, [links]);
   return counts;
 }
 
@@ -77,12 +84,12 @@ function Transcript({ turns }) {
 
 // The testers' conversations, styled like the "?" help dialog, with a left bar of one entry per run, its
 // day and whether it reached End, and the chosen conversation on the right, scrollable. The same box is
-// the builder's popup and the results page (/results/<token>), so the two are identical.
+// the builder's popup and the results page (/results/<ConversationDesignPublicLinkToken>), so the two are identical.
 const dayOf = (t) => (t ? new Date(t * 1000).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }) : "");
-export function RunsBox({ token, label, boxRef }) {
+export function RunsBox({ ConversationDesignPublicLinkToken, label, boxRef }) {
   const [runs, setRuns] = useState(null);
   const [pick, setPick] = useState(0);
-  useEffect(() => { fetchRuns(token).then(setRuns).catch(() => setRuns([])); }, [token]);
+  useEffect(() => { fetchRuns(ConversationDesignPublicLinkToken).then(setRuns).catch(() => setRuns([])); }, [ConversationDesignPublicLinkToken]);
   const run = runs && runs[pick];
   return (
       <div ref={boxRef} className="flex flex-col gap-4 border p-5" style={{ width: 800, maxWidth: "calc(100% - 2rem)", background: "var(--dialog)", borderColor: "var(--line)" }} data-testid="runs-box">
@@ -108,7 +115,7 @@ export function RunsBox({ token, label, boxRef }) {
 }
 
 // The builder's popup, the box above over the canvas area, closed by a click outside it.
-function RunsDialog({ token, label, onClose }) {
+function RunsDialog({ ConversationDesignPublicLinkToken, label, onClose }) {
   const boxRef = useRef(null);
   useEffect(() => {
     const onDown = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) onClose(); };
@@ -117,7 +124,7 @@ function RunsDialog({ token, label, onClose }) {
   }, [onClose]);
   return createPortal(
     <div className="fixed inset-y-0 left-0 z-50 flex items-center justify-center" style={{ right: "26rem", background: "var(--scrim)" }} data-testid="runs-dialog">
-      <RunsBox token={token} label={label} boxRef={boxRef} />
+      <RunsBox ConversationDesignPublicLinkToken={ConversationDesignPublicLinkToken} label={label} boxRef={boxRef} />
     </div>,
     document.body,
   );
@@ -172,7 +179,7 @@ export function SavedRow({ c, isCurrent, count, onLoad, onDelete }) {
               title="Others have tried this through its link, so it cannot be deleted" data-testid="saved-locked">tried ×{count}</button>
           : <button type="button" className="btn px-2 py-0 text-xs text-red-400" onClick={onDelete} aria-label="Delete">✕</button>}
       </div>
-      {open && <RunsDialog token={c.shareToken} label={c.label} onClose={() => setOpen(false)} />}
+      {open && <RunsDialog ConversationDesignPublicLinkToken={c.shareToken} label={c.label} onClose={() => setOpen(false)} />}
     </div>
   );
 }

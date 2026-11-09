@@ -5,7 +5,7 @@ connection built from the design the builder reserved for it, and the functions 
 The dialogue system builder is made to run with Illocutionary Lifecycles (IL), which it cannot run without, and in it a person
 draws a conversation as steps and lines on a canvas, compiles it to the flow IL runs, and talks to it through IL's
 mounts, and this module, in the builder's server folder ``dialogue_system_builder``, is the point where a design becomes one IL
-session. The builder's page never sends a design over the wire a mount owns. The page first posts the design, or the token
+session. The builder's page never sends a design over the wire a mount owns. The page first posts the design, or the ConversationDesignPublicLinkToken
 of a testing link, to the builder's route ``/api/sessions``, which calls ``ReserveDialogueSystemBuilderConversationSession``
 and returns a session id. The page then connects to IL's text mount at ``/ws?session_id=...``, or sends that id in the
 request data of the WebRTC offer to IL's voice mount, and the mount's ``NewConversationSession`` calls
@@ -20,7 +20,7 @@ constructs ``illocutionary_lifecycles.core.session_provider.SessionProvider`` on
 reserved designs are kept in ``ReservedDialogueSystemBuilderConversationSessions`` in this process only, so a server restart
 between the reservation and the connection loses the reservation and the connection fails with the error below. The
 session ids it makes are read by ``dialogue_system_builder.share.TestingLinkRuns``, which lists the runs of a testing link by
-the id's prefix "try-<token>-", so a change to the id's shape is a change there too.
+the id's prefix "try-<ConversationDesignPublicLinkToken>-", so a change to the id's shape is a change there too.
 """
 from __future__ import annotations
 
@@ -33,32 +33,33 @@ from illocutionary_lifecycles.server.adapter_mounts.websocket_mounts.TextAdapter
     TextAdapterWebsocketMount,
 )
 
-# Session id -> {"design", "way", "token", "reserved_at"}, one row per Start not yet connected, in this process only.
+# Session id -> {"design", "ConversationDesignPublicLinkToken", "reserved_at"}, one row per Start not yet connected, in this process only.
 ReservedDialogueSystemBuilderConversationSessions: dict[str, dict[str, Any]] = {}
 
 # A reservation older than this many seconds is dropped the next time one is made, so an abandoned Start leaves nothing.
 RESERVATION_LIFETIME_SECONDS = 600
 
 
-def DialogueSystemBuilderConversationSessionId(way: str, token: str | None) -> str:
-    """Return a new session id, "try-<token>-<way>-<hex>" for a run through a testing link and "builder-<way>-<hex>"
-    for the designer's own Start. ``dialogue_system_builder.share.TestingLinkRuns`` lists a link's runs by the first form's
+def DialogueSystemBuilderConversationSessionId(ConversationDesignPublicLinkToken: str | None) -> str:
+    """Return a new session id, "try-", the ConversationDesignPublicLinkToken, "-" and eight hex characters for a run through a testing link, and
+    "builder-" and eight hex characters for the designer's own Start. The suffix has a fixed length so that a ConversationDesignPublicLinkToken which
+    itself holds "-" still parses. ``dialogue_system_builder.share.TestingLinkRuns`` lists a link's runs by the first form's
     prefix. Called by ``ReserveDialogueSystemBuilderConversationSession`` in this module."""
     suffix = uuid.uuid4().hex[:8]
-    return f"try-{token}-{way}-{suffix}" if token else f"builder-{way}-{suffix}"
+    return f"try-{ConversationDesignPublicLinkToken}-{suffix}" if ConversationDesignPublicLinkToken else f"builder-{suffix}"
 
 
-def ReserveDialogueSystemBuilderConversationSession(design: dict[str, Any], way: str, token: str | None = None) -> str:
-    """Keep ``design`` for one coming connection on ``way``, "text" or "voice", and return the session id the page
-    connects with. ``token`` is the testing link the run goes through, or ``None`` for the designer's own Start, and
+def ReserveDialogueSystemBuilderConversationSession(design: dict[str, Any], ConversationDesignPublicLinkToken: str | None = None) -> str:
+    """Keep ``design`` for one coming connection and return the session id the page
+    connects with. ``ConversationDesignPublicLinkToken`` is the testing link the run goes through, or ``None`` for the designer's own Start, and
     only names the session. Reservations older than ``RESERVATION_LIFETIME_SECONDS`` are dropped first. Called by the
     route ``/api/sessions`` in ``dialogue_system_builder.app``, which has already checked the design."""
     now = time.time()
     for stale in [sid for sid, row in ReservedDialogueSystemBuilderConversationSessions.items()
                   if now - row["reserved_at"] > RESERVATION_LIFETIME_SECONDS]:
         ReservedDialogueSystemBuilderConversationSessions.pop(stale, None)
-    session_id = DialogueSystemBuilderConversationSessionId(way, token)
-    ReservedDialogueSystemBuilderConversationSessions[session_id] = {"design": design, "way": way, "token": token,
+    session_id = DialogueSystemBuilderConversationSessionId(ConversationDesignPublicLinkToken)
+    ReservedDialogueSystemBuilderConversationSessions[session_id] = {"design": design, "ConversationDesignPublicLinkToken": ConversationDesignPublicLinkToken,
                                                              "reserved_at": now}
     return session_id
 

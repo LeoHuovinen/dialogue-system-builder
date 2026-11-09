@@ -5,11 +5,11 @@ testing links.
 The dialogue system builder is made to run with Illocutionary Lifecycles (IL), which it cannot run without, and in it a person
 draws a conversation as steps and lines on a canvas, compiles it to the flow IL runs, and talks to it through IL's
 mounts, and this module, in the server folder ``dialogue_system_builder``, is the server the builder's pages talk to, the editor
-at "/", a testing link's page at "/try/<token>" and its results at "/results/<token>". Every conversation goes through
+at "/", a testing link's page at "/try/<ConversationDesignPublicLinkToken>" and its results at "/results/<ConversationDesignPublicLinkToken>". Every conversation goes through
 IL's topology and nothing else, the page's ``ConnectConversation.js`` from IL speaking the wire of IL's mount, the mount
 building the session and its adapter, and the adapter talking to IL's ``SessionProvider``. The page reserves each
 session first at ``/api/sessions``, as ``dialogue_system_builder.mounts`` explains. The builder's routes never hold a
-conversation, they check, compile, keep testing links and read finished records.
+conversation, they check, compile, keep testing links and their ConversationDesignAPIKey, and read finished records.
 
 The server keeps nothing about its visitors and runs as one process with its files in one folder, which is all a
 person on localhost needs and all someone hosting it has to back up. Every setting is an argument of ``serve`` or a
@@ -68,18 +68,18 @@ def _no_design() -> JSONResponse:
 async def reserve_session(request: Request):
     """Reserve one conversation session and return ``{"ok", "session_id", "endings"}``, the id the page connects to
     IL's mount with and the indexes of the design's End steps. The body is ``{"way", "design"}`` for the designer's own
-    Start, where ``way`` is "text" or "voice", or ``{"way", "token"}`` for a run through a testing link, which runs the
+    Start, where ``way`` is "text" or "voice", or ``{"way", "ConversationDesignPublicLinkToken"}`` for a run through a testing link, which runs the
     server's stored copy of the link's design and is text only. Answers 404 "This link does not exist." for an unknown
     link and 400 with the check's findings for a design that cannot run on that way."""
     body = await _json_body(request)
     if not isinstance(body, dict):
         return _no_design()
     way = "voice" if body.get("way") == "voice" else "text"
-    token = str(body.get("token") or "") or None
+    ConversationDesignPublicLinkToken = str(body.get("ConversationDesignPublicLinkToken") or "") or None
     if way == "voice" and not VOICE:
         return JSONResponse({"ok": False, "error": "this server runs on text alone"}, status_code=400)
-    if token:
-        link = share.TestingLinkDesign(token)
+    if ConversationDesignPublicLinkToken:
+        link = share.TestingLinkDesign(ConversationDesignPublicLinkToken)
         if link is None:
             return JSONResponse({"ok": False, "error": "This link does not exist."}, status_code=404)
         if way != "text":
@@ -92,7 +92,7 @@ async def reserve_session(request: Request):
     checked = validate_design(design, require_voice=(way == "voice"))
     if not checked["ok"]:
         return JSONResponse(checked, status_code=400)
-    session_id = ReserveDialogueSystemBuilderConversationSession(design, way, token)
+    session_id = ReserveDialogueSystemBuilderConversationSession(design, ConversationDesignPublicLinkToken)
     return JSONResponse({"ok": True, "session_id": session_id, "endings": compile_design(design)["endings"]})
 
 
@@ -138,9 +138,13 @@ async def generate(request: Request):
 
 @router.post("/api/share")
 async def share_design(request: Request):
-    """Store the body's ``design`` behind a testing link, the existing one named by ``token`` or a new one, and return
-    ``{"token", "link", "url"}``, where ``url`` names the host the request reached, so the link works for others behind
-    a proxy that passes ``X-Forwarded-Proto`` and ``Host``. Answers 400 for a design that does not compile."""
+    """Store the body's ``design`` behind a testing link, the existing one named by ``ConversationDesignPublicLinkToken`` or a new one, and return
+    ``{"ConversationDesignPublicLinkToken", "link", "url", "ConversationDesignAPIKey"}``. ``url`` names the host the request
+    reached, so the link works for others behind a proxy that passes ``X-Forwarded-Proto`` and ``Host``.
+    ``ConversationDesignAPIKey`` is the link's API key, made by this Save when the link had none. A Save that names an
+    existing link which already has an API key must carry that key in the header ``X-Conversation-Design-API-Key``, so
+    that a person who only holds the public link code cannot overwrite the design. Answers 403 without it and 400 for a
+    design that does not compile."""
     body = await _json_body(request)
     if not isinstance(body, dict) or not isinstance(body.get("design"), dict):
         return _no_design()
@@ -148,33 +152,39 @@ async def share_design(request: Request):
         compile_design(body["design"])
     except CompileError as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
-    token = share.SaveTestingLink(body["design"], str(body.get("label") or ""), str(body.get("token") or "") or None)
+    wanted = str(body.get("ConversationDesignPublicLinkToken") or "") or None
+    existing_key = share.ConversationDesignAPIKey(wanted) if wanted else None
+    if existing_key and request.headers.get("x-conversation-design-api-key") != existing_key:
+        return JSONResponse({"ok": False, "error": "This link was saved from another browser."}, status_code=403)
+    ConversationDesignPublicLinkToken = share.SaveTestingLink(body["design"], str(body.get("label") or ""), wanted)
     proto = request.headers.get("x-forwarded-proto") or request.url.scheme
     host = request.headers.get("host") or request.url.netloc
-    return JSONResponse({"token": token, "link": f"/try/{token}", "url": f"{proto}://{host}/try/{token}"})
+    return JSONResponse({"ConversationDesignPublicLinkToken": ConversationDesignPublicLinkToken, "link": f"/try/{ConversationDesignPublicLinkToken}",
+                         "url": f"{proto}://{host}/try/{ConversationDesignPublicLinkToken}",
+                         "ConversationDesignAPIKey": share.ConversationDesignAPIKey(ConversationDesignPublicLinkToken)})
 
 
 @router.get("/api/share/counts")
-async def share_counts(tokens: str = ""):
-    """Return ``{"counts": {token: runs}}`` for the comma-separated ``tokens``, the page's "tried ×N"."""
-    return JSONResponse({"counts": {t: share.TestingLinkRunCount(t) for t in tokens.split(",") if t}})
+async def share_counts(links: str = ""):
+    """Return ``{"counts": {link code: runs}}`` for the comma-separated link codes ``links``, the page's "tried ×N"."""
+    return JSONResponse({"counts": {t: share.TestingLinkRunCount(t) for t in links.split(",") if t}})
 
 
-@router.get("/api/share/{token}/design")
-async def shared_design(token: str):
-    """Return the design and label behind the testing link ``token``, or 404 for an unknown link."""
-    link = share.TestingLinkDesign(token)
+@router.get("/api/share/{ConversationDesignPublicLinkToken}/design")
+async def shared_design(ConversationDesignPublicLinkToken: str):
+    """Return the design and label behind the testing link ``ConversationDesignPublicLinkToken``, or 404 for an unknown link."""
+    link = share.TestingLinkDesign(ConversationDesignPublicLinkToken)
     if link is None:
         return JSONResponse({"error": "unknown link"}, status_code=404)
     return JSONResponse({"design": link["design"], "label": link.get("label") or ""})
 
 
-@router.get("/api/share/{token}/runs")
-async def shared_runs(token: str):
-    """Return ``{"token", "runs"}``, every run through the testing link ``token``, or 404 for an unknown link."""
-    if share.TestingLinkDesign(token) is None:
+@router.get("/api/share/{ConversationDesignPublicLinkToken}/runs")
+async def shared_runs(ConversationDesignPublicLinkToken: str):
+    """Return ``{"ConversationDesignPublicLinkToken", "runs"}``, every run through the testing link ``ConversationDesignPublicLinkToken``, or 404 for an unknown link."""
+    if share.TestingLinkDesign(ConversationDesignPublicLinkToken) is None:
         return JSONResponse({"error": "unknown link"}, status_code=404)
-    return JSONResponse({"token": token, "runs": share.TestingLinkRuns(token)})
+    return JSONResponse({"ConversationDesignPublicLinkToken": ConversationDesignPublicLinkToken, "runs": share.TestingLinkRuns(ConversationDesignPublicLinkToken)})
 
 
 @router.get("/health")
@@ -245,18 +255,18 @@ async def flow_viewer_js():
     return FileResponse(os.path.join(_DIST, "flow-viewer.js"), media_type="text/javascript")
 
 
-@router.get("/try/{token}")
-async def try_page(token: str):
-    """The tester's page of the testing link ``token``, or a 404 page for an unknown link."""
-    if share.TestingLinkDesign(token) is None:
+@router.get("/try/{ConversationDesignPublicLinkToken}")
+async def try_page(ConversationDesignPublicLinkToken: str):
+    """The tester's page of the testing link ``ConversationDesignPublicLinkToken``, or a 404 page for an unknown link."""
+    if share.TestingLinkDesign(ConversationDesignPublicLinkToken) is None:
         return HTMLResponse("<p>This link does not exist.</p>", status_code=404)
     return _page("try.html")
 
 
-@router.get("/results/{token}")
-async def results_page(token: str):
-    """The page of the testers' conversations through the link ``token``, or a 404 page for an unknown link."""
-    if share.TestingLinkDesign(token) is None:
+@router.get("/results/{ConversationDesignPublicLinkToken}")
+async def results_page(ConversationDesignPublicLinkToken: str):
+    """The page of the testers' conversations through the link ``ConversationDesignPublicLinkToken``, or a 404 page for an unknown link."""
+    if share.TestingLinkDesign(ConversationDesignPublicLinkToken) is None:
         return HTMLResponse("<p>This link does not exist.</p>", status_code=404)
     return _page("results.html")
 
