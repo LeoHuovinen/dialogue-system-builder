@@ -13,8 +13,8 @@ through IL's text mount like the designer's own Start, on the server's stored co
 one JSON file per link under ``<DIALOGUE_SYSTEM_BUILDER_DATA>/shares``, and reads finished sessions back through IL's read-only
 storage vendor "local-readonly". A run is read once and kept in memory until its stored events change, so the page's
 run counts stay cheap however many runs a link has. The runs of a link are the stored sessions whose id is exactly
-"try-", the ConversationDesignPublicLinkToken, "-" and a hex suffix, the shape ``dialogue_system_builder.mounts.DialogueSystemBuilderConversationSessionId``
-gives, and the earlier shape with "text-" or "voice-" before the suffix is still read. The routes that
+"try-", the ConversationDesignPublicLinkToken, "-", then either a hex suffix alone or "text-" or "voice-" and a hex suffix.
+``dialogue_system_builder.mounts.DialogueSystemBuilderConversationSessionId`` makes the first of these. The routes that
 call this module are in ``dialogue_system_builder.app``.
 """
 from __future__ import annotations
@@ -45,8 +45,8 @@ def _link_path(ConversationDesignPublicLinkToken: str) -> str | None:
 
 def TestingLinkDesign(ConversationDesignPublicLinkToken: str) -> dict[str, Any] | None:
     """Return the stored link ``ConversationDesignPublicLinkToken`` as a dict with ``design``, ``label``, ``shared_at`` and
-    ``ConversationDesignAPIKey``, or ``None`` for an unknown or malformed link code. A link saved before API keys existed
-    has no ``ConversationDesignAPIKey`` until its next Save, which makes it."""
+    ``ConversationDesignAPIKey``, or ``None`` for an unknown or malformed link code. A link file without a
+    ``ConversationDesignAPIKey`` gets one at its next Save."""
     path = _link_path(ConversationDesignPublicLinkToken)
     if not path or not os.path.isfile(path):
         return None
@@ -57,10 +57,10 @@ def TestingLinkDesign(ConversationDesignPublicLinkToken: str) -> dict[str, Any] 
 def SaveTestingLink(design: dict[str, Any], label: str, ConversationDesignPublicLinkToken: str | None = None) -> str:
     """Store ``design`` and ``label`` behind the link ``ConversationDesignPublicLinkToken`` when that link exists, so a later Save of the same
     conversation updates the design behind its link and keeps its runs and its ``ConversationDesignAPIKey``, or behind a new
-    random link code otherwise. When the link has no API key, because it is new or was saved before API keys existed, this
-    function makes one, "sk-" and 48 random letters and digits, OpenAI's key format so that a tool written for OpenAI's API
-    accepts it in its key setting, and the ``/api/share`` route returns it to the browser that saved. The route, not this
-    function, decides whether a Save may change an existing link. Returns the link code."""
+    random link code otherwise. When the link file has no ``ConversationDesignAPIKey``, this function makes one, "sk-" and 48
+    random letters and digits, OpenAI's key format so that a tool written for OpenAI's API accepts it in its key setting, and
+    the ``/api/share`` route returns it to the browser that saved. The route, not this function, decides whether a Save may
+    change an existing link. Returns the link code."""
     link = TestingLinkDesign(ConversationDesignPublicLinkToken) if ConversationDesignPublicLinkToken else None
     if link is None:
         ConversationDesignPublicLinkToken, link = secrets.token_urlsafe(9), {}
@@ -74,9 +74,25 @@ def SaveTestingLink(design: dict[str, Any], label: str, ConversationDesignPublic
 
 
 def ConversationDesignAPIKey(ConversationDesignPublicLinkToken: str) -> str | None:
-    """Return the API key of the link ``ConversationDesignPublicLinkToken``, or ``None`` when the link is unknown or was
-    saved before API keys existed and not saved since. The ``/api/share`` route compares the header of a Save against it."""
+    """Return the ``ConversationDesignAPIKey`` of the link ``ConversationDesignPublicLinkToken``, or ``None`` when the link is
+    unknown or its file has no key. The ``/api/share`` route compares the header of a re-save against it."""
     return (TestingLinkDesign(ConversationDesignPublicLinkToken) or {}).get("ConversationDesignAPIKey") or None
+
+
+def ConversationDesignPublicLinkTokenOfAPIKey(key: str | None) -> str | None:
+    """Return the ``ConversationDesignPublicLinkToken`` whose stored design carries ``key`` as its ``ConversationDesignAPIKey``,
+    or ``None`` when no stored design does. Reads every link file under ``shares``, which is one small JSON file per
+    stored design. Called by ``dialogue_system_builder.mounts.DialogueSystemBuilderHTTPEndpointMount.Authenticate`` on
+    every request to "/v1", where the bearer is the key and nothing else names the design."""
+    if not key or not key.startswith("sk-"):
+        return None
+    folder = os.path.join(store.data_dir(), "shares")
+    if not os.path.isdir(folder):
+        return None
+    for name in os.listdir(folder):
+        if name.endswith(".json") and (TestingLinkDesign(name[:-5]) or {}).get("ConversationDesignAPIKey") == key:
+            return name[:-5]
+    return None
 
 
 def _is_run_suffix(rest: str) -> bool:
@@ -91,8 +107,7 @@ def _is_run_suffix(rest: str) -> bool:
 
 def _session_ids_of(ConversationDesignPublicLinkToken: str) -> list[str]:
     """Return the stored sessions of the link ``ConversationDesignPublicLinkToken``, oldest first. A ConversationDesignPublicLinkToken may itself hold "-", so a session
-    belongs to the link only when what follows the prefix is hex alone, or "text-" or "voice-" and hex, the shape of
-    sessions stored before the way left the id."""
+    belongs to the link only when what follows the prefix is hex alone, or "text-" or "voice-" and hex."""
     sessions = store.sessions_dir()
     if not os.path.isdir(sessions):
         return []

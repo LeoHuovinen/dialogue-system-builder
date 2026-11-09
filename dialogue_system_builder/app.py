@@ -1,6 +1,6 @@
-"""The dialogue system builder's server, ``build`` and ``serve``, a FastAPI app with IL's text mount on it at "/ws" and, with
-voice on, IL's voice mount on Pipecat's runner app, plus the builder's own routes for its pages, its checks and its
-testing links.
+"""The dialogue system builder's server, ``build`` and ``serve``, a FastAPI app with IL's text mount on it at "/ws", the
+builder's OpenAI-compatible endpoint mount at "/v1" and, with voice on, IL's voice mount on Pipecat's runner app, plus the
+builder's own routes for its pages, its checks and its testing links.
 
 The dialogue system builder is made to run with Illocutionary Lifecycles (IL), which it cannot run without, and in it a person
 draws a conversation as steps and lines on a canvas, compiles it to the flow IL runs, and talks to it through IL's
@@ -37,7 +37,11 @@ from illocutionary_lifecycles.server.adapters.flow_adapters.SaveLoadFlowAdapter 
 from dialogue_system_builder import share, store  # noqa: E402
 from dialogue_system_builder.checks import validate_design  # noqa: E402
 from dialogue_system_builder.compile import CompileError, compile_design  # noqa: E402
-from dialogue_system_builder.mounts import DialogueSystemBuilderTextAdapterWebsocketMount, ReserveDialogueSystemBuilderConversationSession  # noqa: E402
+from dialogue_system_builder.mounts import (  # noqa: E402
+    DialogueSystemBuilderHTTPEndpointMount,
+    DialogueSystemBuilderTextAdapterWebsocketMount,
+    ReserveDialogueSystemBuilderConversationSession,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -49,6 +53,8 @@ _DIST = os.path.join(_HERE, "frontend", "dist")
 
 # IL's mounts require a flow at construction, and no connection runs this one, since every session is the reserved one.
 _NO_FLOW = {"PromptBlocks": {}, "ConversationStates": {}}
+# The one model name the endpoint at "/v1" lists and echoes. A request's own "model" field is information only.
+ENDPOINT_MODEL_NAME = "dialogue-system-builder"
 
 
 async def _json_body(request: Request) -> Any:
@@ -274,8 +280,8 @@ async def results_page(ConversationDesignPublicLinkToken: str):
 def build(voice: bool = True, stt_vendor: str = "azure") -> Any:
     """Return the app with IL's mounts and every builder route on it. With ``voice`` on the app is Pipecat's runner app
     with IL's voice mount, using ``stt_vendor`` for STT, and without it the app is a bare FastAPI and Pipecat is never
-    imported. Either way IL's text mount is at "/ws" and the built pages' ``assets`` and ``il`` folders are served, the
-    second holding IL's page scripts. Called by ``serve``."""
+    imported. In both cases IL's text mount is at "/ws", the builder's OpenAI-compatible endpoint mount is at "/v1", and the
+    built pages' ``assets`` and ``il`` folders are served, the second holding IL's page scripts. Called by ``serve``."""
     global VOICE, app, VOICE_MOUNT
     VOICE = bool(voice)
     if VOICE:
@@ -290,6 +296,7 @@ def build(voice: bool = True, stt_vendor: str = "azure") -> Any:
         app = FastAPI()
         VOICE_MOUNT = None
     DialogueSystemBuilderTextAdapterWebsocketMount(_NO_FLOW).MountOnApp(app, "/ws")
+    DialogueSystemBuilderHTTPEndpointMount(_NO_FLOW, IdleSeconds=180, ModelName=ENDPOINT_MODEL_NAME).MountOnApp(app, "/v1")
     app.include_router(router)
     from fastapi.staticfiles import StaticFiles
     for folder in ("assets", "il"):

@@ -41,8 +41,10 @@ node IL does not know, which the builder marks by the state indexes ``dialogue_s
 and opens the chat page and nothing else. A saved design also has a ``ConversationDesignAPIKey``, "sk-" and 48 random letters
 and digits in OpenAI's key format, made at Save and returned only to the browser that saved. A later Save of that design must
 present the key, so holding the link alone does not allow overwriting the design. The key is written as it is into the
-design's JSON file, so whoever runs the server can read it there when helping the person who saved. A run is one finished or
-unfinished conversation a person had with the design through its link.
+design's JSON file, so whoever runs the server can read it there when helping the person who saved. The same key is the
+bearer of a request to "/v1", the builder's OpenAI-compatible endpoint, which runs one turn of that design per request and
+keeps the conversation between requests, so a tool written for OpenAI's API talks to the design once given the key. A run
+is one finished or unfinished conversation a person had with the design through its link or through "/v1".
 
 A ``data-testid`` in the page files is a stable name for that element, for programs that drive the pages.
 """
