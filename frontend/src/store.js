@@ -12,3 +12,6 @@ export const useStore = create((set, get) => ({
   ...editorSlice(set, get),
   ...liveSlice(set, get),
 }));
+
+// The starting canvas counts as unchanged until it is edited.
+useStore.getState().markClean();

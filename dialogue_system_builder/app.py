@@ -48,6 +48,7 @@ router = APIRouter()
 VOICE = True
 app = None
 VOICE_MOUNT = None
+PRESS = False   # True when ``build`` added the hold-to-talk mount, which needs Azure's Speech SDK and the speech key and region
 
 _DIST = os.path.join(_HERE, "frontend", "dist")
 
@@ -70,32 +71,49 @@ def _no_design() -> JSONResponse:
     return JSONResponse({"ok": False, "error": "no design"}, status_code=400)
 
 
+def _VoiceWayOf(design: dict[str, Any]) -> str:
+    """Return the name of the mount a voice conversation of ``design`` runs on. It is "press", the hold-to-talk mount,
+    when the design's ``talking`` is "hold". Otherwise it is "voice", the hands-free Pipecat mount."""
+    return "press" if (design or {}).get("talking") == "hold" else "voice"
+
+
+def _VoiceRunsHere(design: dict[str, Any]) -> bool:
+    """Return whether this server has the mount ``_VoiceWayOf`` names for ``design``, so that the design can run by
+    voice here."""
+    return PRESS if _VoiceWayOf(design) == "press" else VOICE
+
+
 @router.post("/api/sessions")
 async def reserve_session(request: Request):
     """Reserve one conversation session and return ``{"ok", "session_id", "endings"}``, the id the page connects to
     IL's mount with and the indexes of the design's End steps. The body is ``{"way", "design"}`` for the designer's own
-    Start, where ``way`` is "text" or "voice", or ``{"way", "ConversationDesignPublicLinkToken"}`` for a run through a testing link, which runs the
-    server's stored copy of the link's design and is text only. Answers 404 "This link does not exist." for an unknown
+    Start, where ``way`` is "text", "voice" or "press", or ``{"way", "ConversationDesignPublicLinkToken"}`` for a run through a testing link. A
+    testing link runs the server's stored copy of its design, and a text or voice run is allowed only when the link's
+    settings allow it. Answers 404 "This link does not exist." for an unknown
     link and 400 with the check's findings for a design that cannot run on that way."""
     body = await _json_body(request)
     if not isinstance(body, dict):
         return _no_design()
-    way = "voice" if body.get("way") == "voice" else "text"
+    way = body.get("way") if body.get("way") in ("voice", "press") else "text"
     ConversationDesignPublicLinkToken = str(body.get("ConversationDesignPublicLinkToken") or "") or None
     if way == "voice" and not VOICE:
         return JSONResponse({"ok": False, "error": "this server runs on text alone"}, status_code=400)
+    if way == "press" and not PRESS:
+        return JSONResponse({"ok": False, "error": "this server has no hold-to-talk voice"}, status_code=400)
     if ConversationDesignPublicLinkToken:
         link = share.TestingLinkDesign(ConversationDesignPublicLinkToken)
         if link is None:
             return JSONResponse({"ok": False, "error": "This link does not exist."}, status_code=404)
-        if way != "text":
-            return JSONResponse({"ok": False, "error": "testing links are text only"}, status_code=400)
+        if way != "text" and not share.TestingLinkVoice(link):
+            return JSONResponse({"ok": False, "error": "this testing link is text only"}, status_code=400)
+        if way == "text" and not share.TestingLinkText(link) and _VoiceRunsHere(link["design"]) and share.TestingLinkVoice(link):
+            return JSONResponse({"ok": False, "error": "this testing link is voice only"}, status_code=400)
         design = link["design"]
     else:
         design = body.get("design")
         if not isinstance(design, dict):
             return _no_design()
-    checked = validate_design(design, require_voice=(way == "voice"))
+    checked = validate_design(design, require_voice=(way != "text"))
     if not checked["ok"]:
         return JSONResponse(checked, status_code=400)
     session_id = ReserveDialogueSystemBuilderConversationSession(design, ConversationDesignPublicLinkToken)
@@ -145,7 +163,9 @@ async def generate(request: Request):
 @router.post("/api/share")
 async def share_design(request: Request):
     """Store the body's ``design`` behind a testing link, the existing one named by ``ConversationDesignPublicLinkToken`` or a new one, and return
-    ``{"ConversationDesignPublicLinkToken", "link", "url", "ConversationDesignAPIKey"}``. ``url`` names the host the request
+    ``{"ConversationDesignPublicLinkToken", "link", "url", "ConversationDesignAPIKey", "text", "voice", "micCheck"}``. A ``text``,
+    ``voice`` or ``micCheck`` key in the body sets that link setting to true or false. A key left out of the body leaves
+    that setting as it was. ``url`` names the host the request
     reached, so the link works for others behind a proxy that passes ``X-Forwarded-Proto`` and ``Host``.
     ``ConversationDesignAPIKey`` is the link's API key, made by this Save when the link had none. A Save that names an
     existing link which already has an API key must carry that key in the header ``X-Conversation-Design-API-Key``, so
@@ -162,12 +182,17 @@ async def share_design(request: Request):
     existing_key = share.ConversationDesignAPIKey(wanted) if wanted else None
     if existing_key and request.headers.get("x-conversation-design-api-key") != existing_key:
         return JSONResponse({"ok": False, "error": "This link was saved from another browser."}, status_code=403)
-    ConversationDesignPublicLinkToken = share.SaveTestingLink(body["design"], str(body.get("label") or ""), wanted)
+    def setting(name: str) -> bool | None:
+        return bool(body[name]) if name in body else None
+    ConversationDesignPublicLinkToken = share.SaveTestingLink(body["design"], str(body.get("label") or ""), wanted,
+                                                              setting("voice"), setting("text"), setting("micCheck"))
+    link = share.TestingLinkDesign(ConversationDesignPublicLinkToken) or {}
     proto = request.headers.get("x-forwarded-proto") or request.url.scheme
     host = request.headers.get("host") or request.url.netloc
     return JSONResponse({"ConversationDesignPublicLinkToken": ConversationDesignPublicLinkToken, "link": f"/try/{ConversationDesignPublicLinkToken}",
                          "url": f"{proto}://{host}/try/{ConversationDesignPublicLinkToken}",
-                         "ConversationDesignAPIKey": share.ConversationDesignAPIKey(ConversationDesignPublicLinkToken)})
+                         "ConversationDesignAPIKey": share.ConversationDesignAPIKey(ConversationDesignPublicLinkToken),
+                         "text": share.TestingLinkText(link), "voice": bool(link.get("voice")), "micCheck": bool(link.get("mic_check"))})
 
 
 @router.get("/api/share/counts")
@@ -178,11 +203,16 @@ async def share_counts(links: str = ""):
 
 @router.get("/api/share/{ConversationDesignPublicLinkToken}/design")
 async def shared_design(ConversationDesignPublicLinkToken: str):
-    """Return the design and label behind the testing link ``ConversationDesignPublicLinkToken``, or 404 for an unknown link."""
+    """Return the design and label behind the testing link ``ConversationDesignPublicLinkToken``, or 404 for an unknown link.
+    ``voice`` is true when the link allows voice and this server has the mount the design needs. ``text`` is true when the
+    link allows text, and also whenever ``voice`` is false, so testers always have a way to talk. ``micCheck`` says
+    whether a voice start opens the microphone check first."""
     link = share.TestingLinkDesign(ConversationDesignPublicLinkToken)
     if link is None:
         return JSONResponse({"error": "unknown link"}, status_code=404)
-    return JSONResponse({"design": link["design"], "label": link.get("label") or ""})
+    voice = _VoiceRunsHere(link["design"]) and share.TestingLinkVoice(link)
+    return JSONResponse({"design": link["design"], "label": link.get("label") or "", "voice": voice,
+                         "text": share.TestingLinkText(link) or not voice, "micCheck": bool(link.get("mic_check"))})
 
 
 @router.get("/api/share/{ConversationDesignPublicLinkToken}/runs")
@@ -201,8 +231,10 @@ async def health():
 
 @router.get("/api/capabilities")
 async def capabilities():
-    """Return ``{"voice", "text"}``, what this server can start, so the page greys out the Start it cannot serve."""
-    return JSONResponse({"voice": VOICE, "text": True})
+    """Return ``{"voice", "press", "text"}``, each true when this server can start that kind of conversation. ``voice``
+    is hands-free voice on Pipecat, ``press`` is hold-to-talk voice, and ``text`` is typing. The page greys out every Start
+    button the server cannot serve."""
+    return JSONResponse({"voice": VOICE, "press": PRESS, "text": True})
 
 
 @router.post("/api/flow")
@@ -281,14 +313,18 @@ def build(voice: bool = True, stt_vendor: str = "azure") -> Any:
     """Return the app with IL's mounts and every builder route on it. With ``voice`` on the app is Pipecat's runner app
     with IL's voice mount, using ``stt_vendor`` for STT, and the relay credentials of ``dialogue_system_builder.relay`` kept
     fresh when ``.env`` names a relay that issues credentials, and without it the app is a bare FastAPI and Pipecat is never imported. In both cases IL's text mount is at "/ws", the builder's OpenAI-compatible endpoint mount is at "/v1", and the
-    built pages' ``assets`` and ``il`` folders are served, the second holding IL's page scripts. Called by ``serve``."""
-    global VOICE, app, VOICE_MOUNT
+    built pages' ``assets`` and ``il`` folders are served, the second holding IL's page scripts. IL's press-to-speak
+    mount for hold-to-talk is added at "/press" when Azure's Speech SDK is installed and the speech key and region are set.
+    Called by ``serve``."""
+    global VOICE, PRESS, app, VOICE_MOUNT
     VOICE = bool(voice)
     if VOICE:
         from pipecat.runner.run import app as runner_app
 
-        from dialogue_system_builder.voice_mount import DialogueSystemBuilderPipecatVoiceAdapterWebRtcMount
         from dialogue_system_builder.relay import KeepRelayCredentialsFresh
+        from dialogue_system_builder.voice_mount import (
+            DialogueSystemBuilderPipecatVoiceAdapterWebRtcMount,
+        )
         app = runner_app
         KeepRelayCredentialsFresh()   # TURN_URL fetched from the relay named in .env and kept within its lifetime
         VOICE_MOUNT = DialogueSystemBuilderPipecatVoiceAdapterWebRtcMount(_NO_FLOW, STTVendor=stt_vendor)
@@ -298,6 +334,19 @@ def build(voice: bool = True, stt_vendor: str = "azure") -> Any:
         app = FastAPI()
         VOICE_MOUNT = None
     DialogueSystemBuilderTextAdapterWebsocketMount(_NO_FLOW).MountOnApp(app, "/ws")
+    try:   # hold-to-talk needs Azure's Speech SDK and AZURE_SPEECH_KEY and AZURE_SPEECH_REGION, and is left off without them
+        import importlib.util
+        # IL imports the SDK only when someone first presses the button, so a missing SDK would otherwise surface then.
+        if importlib.util.find_spec("azure.cognitiveservices.speech") is None:
+            raise ImportError("Azure's Speech SDK azure-cognitiveservices-speech is not installed")
+        from dialogue_system_builder.press_mount import (
+            DialogueSystemBuilderPressToSpeakAdapterWebsocketMount,
+        )
+        DialogueSystemBuilderPressToSpeakAdapterWebsocketMount(_NO_FLOW).MountOnApp(app, "/press")
+        PRESS = True
+    except (ImportError, RuntimeError, ValueError) as exc:
+        PRESS = False
+        logger.info("hold-to-talk voice is off: %s", exc)
     DialogueSystemBuilderHTTPEndpointMount(_NO_FLOW, IdleSeconds=180, ModelName=ENDPOINT_MODEL_NAME).MountOnApp(app, "/v1")
     app.include_router(router)
     from fastapi.staticfiles import StaticFiles

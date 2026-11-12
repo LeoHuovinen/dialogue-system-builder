@@ -67,18 +67,72 @@ export function VoiceStartDialog({ onStart, onCancel }) {
   );
 }
 
-// The page's own confirm popup, in the same style as the voice popup; never the browser's.
+// A design drawn small, one solid grey box per node at its stored position and one grey line per edge, from the right
+// side of its source to the left side of its target as on the canvas. The design stores no sizes, so the boxes are the
+// typical sizes of each kind.
+const THUMB_SIZE = { start: [120, 48], end: [120, 48], step: [240, 110] };
+export function FlowThumb({ design, label }) {
+  const nodes = (design?.nodes || []).filter((n) => n?.position);
+  const size = (n) => THUMB_SIZE[n.type] || THUMB_SIZE.step;
+  const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
+  const xs = nodes.flatMap((n) => [n.position.x, n.position.x + size(n)[0]]);
+  const ys = nodes.flatMap((n) => [n.position.y, n.position.y + size(n)[1]]);
+  const pad = 40;
+  const box = nodes.length
+    ? [Math.min(...xs) - pad, Math.min(...ys) - pad, Math.max(...xs) - Math.min(...xs) + 2 * pad, Math.max(...ys) - Math.min(...ys) + 2 * pad]
+    : [0, 0, 100, 100];
+  return (
+    <figure className="flex flex-col items-center gap-1" data-testid="flow-thumb">
+      <svg width="160" height="100" viewBox={box.join(" ")} preserveAspectRatio="xMidYMid meet"
+        className="rounded-lg border" style={{ borderColor: "var(--line)", background: "rgb(31,31,31)" }}>
+        {(design?.edges || []).map((e) => {
+          const a = byId[e.source], b = byId[e.target];
+          if (!a || !b) return null;
+          const [sx, sy] = [a.position.x + size(a)[0], a.position.y + size(a)[1] / 2];
+          const [tx, ty] = [b.position.x, b.position.y + size(b)[1] / 2];
+          const bend = Math.max(40, Math.abs(tx - sx) / 2);
+          return <path key={e.id} d={`M${sx},${sy} C${sx + bend},${sy} ${tx - bend},${ty} ${tx},${ty}`}
+            fill="none" stroke="rgb(150,150,150)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />;
+        })}
+        {nodes.map((n) => (
+          <rect key={n.id} x={n.position.x} y={n.position.y} width={size(n)[0]} height={size(n)[1]} rx="14" fill="rgb(105,105,105)" />
+        ))}
+      </svg>
+      {label && <figcaption className="text-xs muted">{label}</figcaption>}
+    </figure>
+  );
+}
+
+// The page's own confirm popup, in the same style as the voice popup; never the browser's. Before the canvas is replaced
+// it shows the current canvas and the design that replaces it as thumbnails, and when the canvas has unsaved changes it
+// offers to save them first.
 export function ConfirmDialog() {
   const confirm = useStore((s) => s.confirm);
   const answerConfirm = useStore((s) => s.answerConfirm);
   if (!confirm) return null;
+  const thumbs = confirm.current && confirm.next;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "var(--scrim)" }} data-testid="confirm-dialog">
-      <div className="flex w-96 flex-col gap-4 border p-5" style={{ background: "var(--dialog)", borderColor: "var(--line)" }}>
+      <div className={`flex ${thumbs ? "w-[28rem]" : "w-96"} flex-col gap-4 border p-5`} style={{ background: "var(--dialog)", borderColor: "var(--line)" }}>
         <div className="text-sm">{confirm.text}</div>
+        {thumbs && (
+          <div className="flex items-center justify-center gap-3" data-testid="confirm-thumbs">
+            <FlowThumb design={confirm.current} label="On the canvas now" />
+            <span className="muted" aria-hidden="true">→</span>
+            <FlowThumb design={confirm.next} label="Opening" />
+          </div>
+        )}
+        {confirm.dirty && <div className="text-xs muted" data-testid="confirm-unsaved">The canvas has changes that are not saved.</div>}
         <div className="flex justify-end gap-2">
           <button type="button" className="btn text-sm" onClick={() => answerConfirm(false)} data-testid="confirm-cancel">Cancel</button>
-          <button type="button" className="btn btn-teal text-sm" onClick={() => answerConfirm(true)} data-testid="confirm-ok">OK</button>
+          {confirm.dirty ? (
+            <>
+              <button type="button" className="btn text-sm" onClick={() => answerConfirm("discard")} data-testid="confirm-discard">Don't save</button>
+              <button type="button" className="btn btn-teal text-sm" onClick={() => answerConfirm("save")} data-testid="confirm-save">Save and open</button>
+            </>
+          ) : (
+            <button type="button" className="btn btn-teal text-sm" onClick={() => answerConfirm(true)} data-testid="confirm-ok">OK</button>
+          )}
         </div>
       </div>
     </div>

@@ -10,7 +10,7 @@ The builder is a single program, and you set up the rest of the hosting yourself
 python server.py --host 0.0.0.0 --port 8200 --data ~/builder-data
 ```
 
-Open that port in the server's firewall. The builder is then available at `http://<server address>:8200/`, and anyone can use its testing links. Testing links are text-only, so they need no further setup.
+Open that port in the server's firewall. The builder is then available at `http://<server address>:8200/`, and anyone can use its testing links. Testing links work by text with no further setup. They also work by voice when the server has voice and you allow voice for that link, as described under Testing links below.
 
 **Before you send the address to anyone:**
 
@@ -22,7 +22,11 @@ To change where conversations are saved, set `memory_vendor` in `dialogue_system
 
 ### Testing links
 
-**Save the current conversation** creates a link, available under **Copy link**. Anyone with the link can talk to the conversation in a plain chat, without the canvas, and a results view shows each tester's run. Testers don't need an account or any setup. On a local machine the links work only on that machine, and on a server anyone who receives them can try it.
+**Save the current conversation** creates a link. Anyone with the link can talk to the conversation in a plain chat, without the canvas, and a results view shows each tester's run. Testers don't need an account or any setup. On a local machine the links work only on that machine, and on a server anyone who receives them can try it.
+
+To share a link, press **Copy link** on the saved conversation that is open on the canvas. A popup opens with the link and a second **Copy link** button. That button first saves the canvas into the link and then copies the link's address, so testers always get what you see on the canvas. On the saved conversations that are not open, **Copy link** and **API** are greyed out, and clicking one of them opens that conversation on the canvas before its popup appears.
+
+The popup also sets how testers may talk. **Text** gives their page a button to start by typing, and **Voice** a button to start by speaking. A new link has Text on and Voice off. Beneath Voice, the popup also has the design's TTS voice and its Talking choice, the same two settings as in Voice settings, and changing either one saves the conversation and its link at once. Voice can be ticked only when a TTS voice is chosen and the server has voice. Beneath Voice, **Check the microphone before starting** is off by default. When ticked, testers first say a few words and see their microphone level, and the conversation starts after that. One of Text and Voice always stays ticked, and trying to untick the only ticked one shows a red warning instead. The server keeps these three settings in the link's file in the `shares` folder of `--data`, and saving the conversation again does not change them. If a link allows only voice but the server has no voice, testers get text instead.
 
 <p align="center"><img alt="The testing view, a plain chat with no canvas" src="readme-screenshots/tester-chat.png" width="40%"></p>
 <p align="center"><sub>The tester's view at <code>/try/&lt;code&gt;</code>. <code>/results/&lt;code&gt;</code> shows what they said.</sub></p>
@@ -32,6 +36,12 @@ The `ConversationDesignPublicLinkToken` in the link is public and opens the chat
 ### The endpoint at /v1
 
 The same `ConversationDesignAPIKey` is the bearer of a request to `/v1/chat/completions` or `/v1/responses`, in the request and reply formats of OpenAI's API, so a tool written for that API runs the design once its base URL points at this server and its key field holds the `ConversationDesignAPIKey`. The endpoint is IL's `HTTPEndpointMount`. IL's mount serves one flow and accepts any bearer, and the builder stores many designs, so the builder's `DialogueSystemBuilderHTTPEndpointMount` fills in the two methods IL leaves to the server, refusing a bearer that is no stored design's key and building each conversation on the design the key belongs to. The conversation is kept on the server between requests, one per key, and each turn is stored and listed on the design's results page like a run through its testing link. The **API** button on a saved design's row shows the address, the key, and OpenAI's quickstart for Python, JavaScript, Unity or curl with both filled in. The nginx example under Hosting on a server forwards every path, `/v1/` included, so no extra block is needed. If the site is behind a browser login, put `auth_basic off;` in a `location /v1/` block, since a bearer client cannot answer a login prompt. The rules of the conversation, the commands and the reply fields are in IL's [`README-HTTPEndpointMount.md`](https://github.com/LeoHuovinen/illocutionary-lifecycles/blob/main/illocutionary_lifecycles/server/adapter_mounts/http_mounts/README-HTTPEndpointMount.md), which is also the endpoint's reply to the command `HELP`.
+
+### Hold-to-talk voice
+
+A design can be talked to in two ways, chosen under **Talking** in its Voice settings. With **Just talk, the microphone is always on**, the conversation runs over WebRTC on IL's Pipecat voice mount, and the assistant decides when the person has finished speaking. With **Hold a button while talking**, it runs over a plain WebSocket on IL's press-to-speak mount at `/press`. The assistant then hears the person only while they hold the button or the Space bar. On a touch screen, one tap starts listening and the next tap sends. The choice is saved with the design, and the editor's voice button and a testing link's voice button both use it.
+
+The server adds the press-to-speak mount whenever Azure's Speech SDK is installed and `AZURE_SPEECH_KEY` and `AZURE_SPEECH_REGION` are set in `.env`, even when the server was started without hands-free voice. Without them, the voice buttons are greyed out for a design set to hold a button.
 
 ### Voice on a server
 

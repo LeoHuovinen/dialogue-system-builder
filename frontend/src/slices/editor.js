@@ -29,7 +29,10 @@ export const editorSlice = (set, get) => ({
   openPrompt: (id) => set({ selected: { kind: "node", id }, panel: "properties", focusTick: get().focusTick + 1 }),
   // The page's own confirm popup, never the browser's, {text, resolve} while one is open.
   confirm: null,
-  askConfirm: (text) => new Promise((resolve) => set({ confirm: { text, resolve } })),
+  // Opens that popup. ``extra`` may hold ``current`` and ``next``, two designs drawn as thumbnails, and ``dirty``, which
+  // adds the buttons Save and open and Don't save. With ``dirty`` the promise resolves to "save", "discard" or false,
+  // and without it to true or false.
+  askConfirm: (text, extra = {}) => new Promise((resolve) => set({ confirm: { text, resolve, ...extra } })),
   answerConfirm: (ok) => { const c = get().confirm; set({ confirm: null }); c?.resolve(ok); },
   ghost: null, // the hover preview of a placement, what placementPreview returns, or null
   setGhost: (ghost) => set({ ghost }),

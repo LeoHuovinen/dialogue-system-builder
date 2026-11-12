@@ -4,8 +4,11 @@
 // it through IL's mounts, and this component is the one place a page of the builder talks. The component first reserves the
 // session at the builder's /api/sessions, with the canvas's design or, on a testing link's page, the link's ConversationDesignPublicLinkToken,
 // and gets a session id and the indexes of the End steps. The component then connects through IL's own
-// ConnectConversation.js, served by the builder at /il/, on the text mount at /ws?session_id=... or on the Pipecat
-// voice mount with the session id in the offer's request data. Everything shown arrives as one view of that
+// ConnectConversation.js, served by the builder at /il/. A text conversation connects to the text mount at
+// /ws?session_id=..., and a hands-free voice conversation to the Pipecat voice mount with the session id in the offer's
+// request data. A design whose Talking is "hold" connects to the press-to-speak mount at /press?session_id=..., and the
+// person holds a button while talking. IL's script sets that button's label and disables it while the assistant speaks.
+// The Space key works as the button too, and on a touch screen one tap starts listening and the next tap sends. Everything shown arrives as one view of that
 // connection. The view's adapterCallback(e) moves the lit node on each
 // ConversationStateChangedAdapterCallbackHandlerEvent and adds an answer on each
 // QuestionAnsweredAdapterCallbackHandlerEvent, userMessage and botMessage fill the chat through chatReducer from
@@ -33,6 +36,7 @@ export function Conversation({ ConversationDesignPublicLinkToken = null }) {
   const setLive = useStore((s) => s.setLive);
   const startMode = useStore((s) => s.startMode);   // "voice" opens the microphone, "text" types only
   const voice = useStore((s) => s.voice);
+  const talking = useStore((s) => s.talking);
   const style = useStore((s) => s.style);
   const live = useStore((s) => s.live);
   const [phase, setPhase] = useState("connecting");  // connecting | live | ended | error
@@ -41,7 +45,9 @@ export function Conversation({ ConversationDesignPublicLinkToken = null }) {
   const [messages, dispatch] = useReducer(chatReducer, []);
   const connection = useRef(null);
   const botTrack = useRef(null);
-  const way = startMode === "voice" ? "voice" : "text";
+  const way = startMode === "voice" ? (talking === "hold" ? "press" : "voice") : "text";
+  const holdButton = useRef(null);
+  const touch = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
 
   useEffect(() => {
     let closed = false;
@@ -63,7 +69,8 @@ export function Conversation({ ConversationDesignPublicLinkToken = null }) {
         const lightNode = () => setLive(speakingPatch(state()));
         const view = {
           start: () => { dispatch({ type: "start" }); setLive(advancePatch(state(), { step_index: 0, previous_index: null, done: endings.includes("0") })); },
-          userMessage: (text, final) => dispatch({ type: "userMessage", text, final }),
+          // When nothing was heard during a hold, the server sends an empty final line. It is not a turn, so it is not shown.
+          userMessage: (text, final) => { if (String(text || "").trim()) dispatch({ type: "userMessage", text, final }); },
           botMessage: (text) => { dispatch({ type: "botMessage", text }); if (way === "text") lightNode(); },
           phase: (p) => {
             if (p === "closed") { setPhase((x) => (x === "live" ? "ended" : x)); setLive({ phase: "idle" }); return; }
@@ -90,15 +97,29 @@ export function Conversation({ ConversationDesignPublicLinkToken = null }) {
         };
         const { ConnectConversation } = await import(/* @vite-ignore */ `${location.origin}/il/ConnectConversation.js`);
         if (closed) return;
+        const sid = encodeURIComponent(reserved.session_id);
         connection.current = await ConnectConversation(way === "voice"
           ? { way, requestData: { session_id: reserved.session_id }, views: [view] }
-          : { way, path: `/ws?session_id=${encodeURIComponent(reserved.session_id)}`, views: [view] });
+          : way === "press"
+            ? { way, path: `/press?session_id=${sid}`, views: [view], ...(touch ? { clickTalk: holdButton.current } : { talk: holdButton.current }) }
+            : { way, path: `/ws?session_id=${sid}`, views: [view] });
         setPhase("live");
       } catch (e) { setError(String(e.message || e)); setPhase("error"); }
     })();
     return () => { closed = true; try { connection.current?.close(); } catch {} };
   }, []);
 
+  // Holding the Space key, while the focus is not in a text field, presses the hold-to-talk button. It sends the button
+  // mouse events, because IL's script listens for those on the button and tracks whether it is held.
+  useEffect(() => {
+    if (way !== "press" || touch) return undefined;
+    const typing = (e) => /^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName || "") || e.target?.isContentEditable;
+    const down = (e) => { if (e.code !== "Space" || e.repeat || typing(e)) return; e.preventDefault(); holdButton.current?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })); };
+    const up = (e) => { if (e.code !== "Space" || typing(e)) return; e.preventDefault(); holdButton.current?.dispatchEvent(new MouseEvent("mouseup", { bubbles: true })); };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
+  }, [way, touch]);
   // Mute TTS silences the assistant's audio track; the reply is still said, so the turns keep their timing.
   useEffect(() => { if (botTrack.current) botTrack.current.enabled = !muted; }, [muted]);
   const backToEdit = () => { try { connection.current?.close(); } catch {} setMode("edit"); };
@@ -111,7 +132,7 @@ export function Conversation({ ConversationDesignPublicLinkToken = null }) {
         <div className="font-medium">Conversation</div>
         <div className="flex-1" />
         {phase === "connecting" && <span className="connecting-label" data-testid="connecting"><span className="spinner" />Connecting…</span>}
-        {phase === "live" && way === "voice" && (
+        {phase === "live" && way !== "text" && (
           <button type="button" className={`action-btn action-btn--sm ${muted ? "action-btn--solid" : "action-btn--ghost"}`} onClick={() => setMuted((m) => !m)} data-testid="mute" data-muted={String(muted)}>
             {muted ? "Unmute TTS" : "Mute TTS"}
           </button>
@@ -144,8 +165,18 @@ export function Conversation({ ConversationDesignPublicLinkToken = null }) {
         {live.done && <span className="rounded-full bg-teal-900/40 px-2 py-0.5 text-xs" data-testid="done">Conversation finished</span>}
         {phase === "ended" && <span className="text-xs muted" data-testid="ended">ended</span>}
       </div>
+      {way === "press" && (
+        <div className="px-4 pb-2" data-testid="hold-to-talk">
+          {/* IL's ConnectConversation writes this button's label ("Loading…", "Hold to speak", "Release to send") and greys it. */}
+          <button type="button" ref={holdButton} className="action-btn action-btn--solid start--accepted w-full select-none py-4 text-base disabled:opacity-40"
+            style={{ touchAction: "none" }} data-testid="hold-button">Loading…</button>
+          <div className="mt-1 text-center text-xs muted" data-testid="hold-hint">
+            {live.phase === "thinking" ? "Thinking…" : live.phase === "speaking" ? "Speaking…" : touch ? "Tap to start talking, tap again to send" : "or hold the Space bar"}
+          </div>
+        </div>
+      )}
       <div className="min-h-0 flex-1">
-        <FlowChat messages={messages} heading={way === "voice" ? "CHAT: speak or type" : "CHAT: type"}
+        <FlowChat messages={messages} heading={way === "voice" ? "CHAT: speak or type" : way === "press" ? "CHAT: hold to talk or type" : "CHAT: type"}
           typing={phase === "live" && !live.done} onSend={(text) => connection.current?.sendText(text)} />
       </div>
       {live.done && (

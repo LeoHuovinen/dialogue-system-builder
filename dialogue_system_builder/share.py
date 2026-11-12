@@ -54,23 +54,44 @@ def TestingLinkDesign(ConversationDesignPublicLinkToken: str) -> dict[str, Any] 
         return json.load(f)
 
 
-def SaveTestingLink(design: dict[str, Any], label: str, ConversationDesignPublicLinkToken: str | None = None) -> str:
+def SaveTestingLink(design: dict[str, Any], label: str, ConversationDesignPublicLinkToken: str | None = None,
+                    voice: bool | None = None, text: bool | None = None, mic_check: bool | None = None) -> str:
     """Store ``design`` and ``label`` behind the link ``ConversationDesignPublicLinkToken`` when that link exists, so a later Save of the same
     conversation updates the design behind its link and keeps its runs and its ``ConversationDesignAPIKey``, or behind a new
     random link code otherwise. When the link file has no ``ConversationDesignAPIKey``, this function makes one, "sk-" and 48
     random letters and digits, OpenAI's key format so that a tool written for OpenAI's API accepts it in its key setting, and
-    the ``/api/share`` route returns it to the browser that saved. The route, not this function, decides whether a Save may
-    change an existing link. Returns the link code."""
+    the ``/api/share`` route returns it to the browser that saved. ``text`` and ``voice`` say which start buttons the link's testers see,
+    and ``mic_check`` says whether starting with voice opens the microphone check first. A setting given as ``None`` stays
+    as the link had it, and a new link starts with text on, voice off and the microphone check off. If a save would turn
+    off both text and voice, text is turned back on, so testers always have a way to talk. The route, not this function,
+    decides whether a Save may change an existing link. Returns the link code."""
     link = TestingLinkDesign(ConversationDesignPublicLinkToken) if ConversationDesignPublicLinkToken else None
     if link is None:
         ConversationDesignPublicLinkToken, link = secrets.token_urlsafe(9), {}
     link.update({"design": design, "label": str(label or "")[:200], "shared_at": time.time()})
+    for name, value in (("voice", voice), ("text", text), ("mic_check", mic_check)):
+        if value is not None:
+            link[name] = bool(value)
+    if not TestingLinkText(link) and not link.get("voice"):
+        link["text"] = True
     if not link.get("ConversationDesignAPIKey"):
         alphabet = string.ascii_letters + string.digits
         link["ConversationDesignAPIKey"] = "sk-" + "".join(secrets.choice(alphabet) for _ in range(48))
     with open(_link_path(ConversationDesignPublicLinkToken), "w", encoding="utf-8") as f:
         json.dump(link, f)
     return ConversationDesignPublicLinkToken
+
+
+def TestingLinkText(link: dict[str, Any]) -> bool:
+    """Return whether testers of the stored ``link`` may start it with text. The link's text setting is on unless the
+    person who shared it turned it off."""
+    return link.get("text") is not False
+
+
+def TestingLinkVoice(link: dict[str, Any]) -> bool:
+    """Return whether testers of the stored ``link`` may start it with voice. That needs two things, the link's voice
+    setting turned on by the person who shared it, and a TTS voice chosen in the link's design."""
+    return bool(link.get("voice")) and bool(str((link.get("design") or {}).get("voice") or ""))
 
 
 def ConversationDesignAPIKey(ConversationDesignPublicLinkToken: str) -> str | None:

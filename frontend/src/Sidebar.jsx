@@ -73,7 +73,8 @@ const saveCurrent = () => {
   writeSaved(next);
   setSaved(next);
   if (!current) setCurrentSavedId(next[0].id);
-  shareSaved(current ? current.id : next[0].id);   // the testing link, made on the first save and updated after
+  useStore.getState().markClean();
+  return shareSaved(current ? current.id : next[0].id);   // the testing link, made on the first save and updated after
 };
 const saveAsNew = () => {
   const { saved, toDesign, setSaved, setCurrentSavedId } = useStore.getState();
@@ -82,7 +83,20 @@ const saveAsNew = () => {
   writeSaved(next);
   setSaved(next);
   setCurrentSavedId(entry.id);
-  shareSaved(entry.id);   // a new saved conversation gets its own testing link
+  useStore.getState().markClean();
+  return shareSaved(entry.id);   // a new saved conversation gets its own testing link
+};
+// Opening a saved conversation, a template, Import design and Describe a conversation all call this before replacing
+// the canvas. The confirm popup shows the current canvas and the design ``next`` as thumbnails. When the canvas has
+// unsaved changes it also offers Save and open, which saves the canvas the way Save does, and Don't save. Resolves true
+// when the canvas may be replaced.
+const confirmReplace = async (text, next) => {
+  const { askConfirm, isDirty, toDesign } = useStore.getState();
+  const dirty = isDirty();
+  const answer = await askConfirm(text, { current: toDesign(), next, dirty });
+  if (!answer) return false;
+  if (answer === "save") await saveCurrent();
+  return true;
 };
 // Download flow writes the canvas as IL's flow, the file a server hands to IL's mounts.
 // The server compiles it and saves it through IL's SaveLoadFlowAdapter before sending it.
@@ -131,8 +145,8 @@ const importDesign = async (e) => {
         : "This file is not a design.");
       return;
     }
-    const { askConfirm, setFindings, loadDesign } = useStore.getState();
-    if (!(await askConfirm(`Replace everything on the canvas with “${design.title || file.name}”?`))) return;
+    const { setFindings, loadDesign } = useStore.getState();
+    if (!(await confirmReplace(`Replace everything on the canvas with “${design.title || file.name}”?`, design))) return;
     setFindings([]);
     loadDesign(design);
   } catch (err) {
@@ -149,6 +163,7 @@ export function DesignHeader() {
   // True while a refused Start asks for a voice and none is chosen yet. The select is then
   // outlined red and the section is held open so the red is seen.
   const needsVoice = useStore((s) => !s.voice && s.findings.some((f) => f.level === "error" && f.code === "choose-voice"));
+  const talking = useStore((s) => s.talking);
   const [voices, setVoices] = useState([]);
   useEffect(() => { let live = true; loadVoices().then((v) => { if (live) setVoices(v); }); return () => { live = false; }; }, []);
   // Grouped by locale for the select, as a list of [localeName, voices].
@@ -172,6 +187,15 @@ export function DesignHeader() {
         ))}
       </select>
       {needsVoice && <div className="mb-2 text-xs italic" style={{ color: "var(--error)" }} data-testid="needs-voice">Please choose a voice</div>}
+      <div className="mb-1 text-xs muted" id="talking-label">Talking</div>
+      <div className="mb-3 flex flex-col gap-1 text-sm" role="radiogroup" aria-labelledby="talking-label" data-testid="talking">
+        {[["free", "Just talk, the microphone is always on"], ["hold", "Hold a button while talking"]].map(([value, text]) => (
+          <label key={value} className="flex cursor-pointer items-center gap-2">
+            <input type="radio" name="talking" value={value} checked={talking === value} onChange={() => setDesignField("talking", value)} data-testid={`talking-${value}`} />
+            {text}
+          </label>
+        ))}
+      </div>
       <label className="mb-1 block text-xs muted" htmlFor="system-prompt">System prompt</label>
       <textarea id="system-prompt" className="field" rows={3} name="style" value={style}
         style={{ maxHeight: "4.6rem", overflowY: "auto", resize: "none" }}
@@ -185,9 +209,8 @@ export function DesignHeader() {
 export function NodesPanel() {
   const loadDesign = useStore((s) => s.loadDesign);
   const setFindings = useStore((s) => s.setFindings);
-  const askConfirm = useStore((s) => s.askConfirm);
   const loadConversation = async (c) => {
-    if (!(await askConfirm(`Replace everything on the canvas with “${c.title}”?`))) return;
+    if (!(await confirmReplace(`Replace everything on the canvas with “${c.title}”?`, c.design))) return;
     setFindings([]);
     loadDesign(structuredClone(c.design));
   };
@@ -202,7 +225,7 @@ export function NodesPanel() {
     try {
       const r = await api.generate(describeText);
       if (!r.ok || !r.design) { setDescribeError(r.error || "the conversation could not be designed"); return; }
-      if (!(await askConfirm("Replace everything on the canvas with the generated conversation?"))) return;
+      if (!(await confirmReplace("Replace everything on the canvas with the generated conversation?", r.design))) return;
       setFindings([]);
       loadDesign(r.design);
     } catch (e) {
@@ -216,11 +239,13 @@ export function NodesPanel() {
   const setSaved = useStore((s) => s.setSaved);
   const current = saved.find((c) => c.id === currentSavedId) || null;
   const runCounts = useRunCounts(saved);   // a shared conversation someone has tried cannot be deleted
+  // Resolves true once the saved conversation is on the canvas, so a row's Copy link or API can open it first.
   const loadSaved = async (c) => {
-    if (!(await askConfirm(`Replace everything on the canvas with “${c.label}”?`))) return;
+    if (!(await confirmReplace(`Replace everything on the canvas with “${c.label}”?`, c.design))) return false;
     setFindings([]);
-    loadDesign(structuredClone(c.design));
+    loadDesign(structuredClone(useStore.getState().saved.find((x) => x.id === c.id)?.design || c.design));
     setCurrentSavedId(c.id);
+    return true;
   };
   const deleteSaved = (id) => {
     const next = saved.filter((c) => c.id !== id);
@@ -337,7 +362,7 @@ export function NodesPanel() {
           {saved.length === 0 && <div className="text-xs muted">Nothing saved in this browser yet.</div>}
           {saved.map((c) => (
             <SavedRow key={c.id} c={c} isCurrent={c.id === currentSavedId} count={runCounts[c.shareToken] || 0}
-              onLoad={() => loadSaved(c)} onDelete={() => deleteSaved(c.id)} />
+              onLoad={() => loadSaved(c)} onSave={saveCurrent} onDelete={() => deleteSaved(c.id)} />
           ))}
         </div>
       </details>

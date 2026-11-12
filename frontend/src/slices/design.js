@@ -17,6 +17,7 @@ export const designSlice = (set, get) => ({
   style: "",
   memory: true,
   voice: "", // the TTS voice by Azure short name
+  talking: "free", // how the person talks in a voice conversation, "free" with the microphone always on, or "hold" holding a button while talking
   nodes: [start, step, end],
   edges: [
     { id: newId("e"), source: start.id, target: step.id, type: "deletable", data: {} },
@@ -98,8 +99,8 @@ export const designSlice = (set, get) => ({
 
   // The design as the server, the saved conversations and Export design all take it.
   toDesign: () => {
-    const { title, style, memory, voice, nodes, edges } = get();
-    return { title, style, memory, voice: voice || "",
+    const { title, style, memory, voice, talking, nodes, edges } = get();
+    return { title, style, memory, voice: voice || "", talking: talking === "hold" ? "hold" : "free",
       nodes: nodes.map(({ id, type, position, data }) => ({ id, type, position, data })),
       edges: edges.map(({ id, source, target, data }) => ({ id, source, target, type: "deletable", data: data || {} })) };
   },
@@ -109,8 +110,16 @@ export const designSlice = (set, get) => ({
       currentSavedId: null, // a loaded design is nobody's saved copy until the sidebar says which
       title: design.title || "Untitled conversation", style: design.style || "", memory: design.memory !== false,
       voice: typeof design.voice === "string" ? design.voice : "",
+      talking: design.talking === "hold" ? "hold" : "free",
       nodes: design.nodes.map((n) => ({ ...n, data: { ...defaultDataOf(n.type), ...(n.data || {}) } })),
       edges: (design.edges || []).map((e) => ({ ...e, type: "deletable", data: e.data || {} })),
       selected: null, panel: "nodes" });
+    get().markClean();
   },
+  // The design as it was last loaded or saved, as toDesign's JSON, so isDirty can say whether replacing the canvas
+  // would lose anything. Moving a node counts as a change. The heights the canvas measures do not, since toDesign
+  // leaves them out.
+  baseline: "",
+  markClean: () => set({ baseline: JSON.stringify(get().toDesign()) }),
+  isDirty: () => JSON.stringify(get().toDesign()) !== get().baseline,
 });

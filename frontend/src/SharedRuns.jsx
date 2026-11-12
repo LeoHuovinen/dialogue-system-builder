@@ -22,18 +22,21 @@ const updateSaved = (id, patch) => {
 };
 // Save makes the testing link. The first save of a conversation creates it, and later saves update the
 // design behind the same link, where the runs already made stay listed. The entry's ConversationDesignAPIKey goes along
-// in X-Conversation-Design-API-Key, and the server's reply refreshes it.
-export async function shareSaved(id) {
+// in X-Conversation-Design-API-Key, and the server's reply refreshes it. ``extra`` may set the link's ``text``,
+// ``voice`` and ``micCheck`` to true or false. The server's answer is kept in the entry as shareText, shareVoice and
+// shareMicCheck, and a setting not in ``extra`` stays as the link had it.
+export async function shareSaved(id, extra = {}) {
   const entry = useStore.getState().saved.find((c) => c.id === id);
   if (!entry) return;
   try {
     const headers = { "Content-Type": "application/json" };
     if (entry.ConversationDesignAPIKey) headers["X-Conversation-Design-API-Key"] = entry.ConversationDesignAPIKey;
     const r = await fetch("/api/share", { method: "POST", headers,
-      body: JSON.stringify({ design: entry.design, label: entry.label, ConversationDesignPublicLinkToken: entry.shareToken || undefined }) });
+      body: JSON.stringify({ design: entry.design, label: entry.label, ConversationDesignPublicLinkToken: entry.shareToken || undefined, ...extra }) });
     const j = await r.json().catch(() => ({}));
     if (r.ok && j.ConversationDesignPublicLinkToken) {
-      updateSaved(id, { shareToken: j.ConversationDesignPublicLinkToken, shareUrl: j.url, ConversationDesignAPIKey: j.ConversationDesignAPIKey });
+      updateSaved(id, { shareToken: j.ConversationDesignPublicLinkToken, shareUrl: j.url, ConversationDesignAPIKey: j.ConversationDesignAPIKey,
+        shareText: j.text !== false, shareVoice: !!j.voice, shareMicCheck: !!j.micCheck });
     }
   } catch {}
 }
@@ -191,14 +194,156 @@ function ApiDialog({ c, onClose }) {
   );
 }
 
+// The testing link popup, which a saved conversation's Copy link opens when that conversation is open on the canvas.
+// It shows the link and its own Copy link button, which first saves the canvas into the link the way Save does, so
+// testers get what is on the canvas. A design that cannot run as text is not copied, and the Start check's findings
+// show instead. Below the link, a box shows how many testers have tried it, from the row's count that refreshes every
+// 15 seconds, with a button that opens their conversations and a link to the results page. With no testers yet it says
+// "No one has tried it yet." Then come checkboxes for how testers may talk, Text, Voice spoken in the design's TTS
+// voice, and beneath Voice whether their microphone is checked first. Voice can be ticked only when the design has a
+// TTS voice and the server has the kind of voice the design needs. One of Text and Voice must stay ticked, so unticking
+// the only ticked one shows a red warning and changes nothing.
+function ShareDialog({ c, count, onOpenRuns, onSave, onClose }) {
+  const boxRef = useRef(null);
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [problems, setProblems] = useState([]);
+  const [serverVoice, setServerVoice] = useState(true);
+  const [warning, setWarning] = useState("");
+  const entry = useStore((s) => s.saved.find((x) => x.id === c.id)) || c;
+  const [voices, setVoices] = useState([]);
+  useEffect(() => { api.voices().then((r) => setVoices(r.voices || [])).catch(() => {}); }, []);
+  // The TTS voice and Talking belong to the design, so changing them here changes the canvas the same way Voice settings
+  // does and saves it at once, to this browser's saved conversation and to the link.
+  const [savingDesign, setSavingDesign] = useState(false);
+  const changeDesign = async (name, value) => {
+    setSavingDesign(true);
+    try { useStore.getState().setDesignField(name, value); await onSave(); } finally { setSavingDesign(false); }
+  };
+  useEffect(() => {
+    const onDown = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) onClose(); };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [onClose]);
+  const hold = entry.design?.talking === "hold";
+  useEffect(() => { api.capabilities().then((x) => setServerVoice(hold ? x?.press === true : x?.voice !== false)).catch(() => {}); }, [hold]);
+  const voiceName = entry.design?.voice || "";
+  const canVoice = serverVoice && !!voiceName;
+  const voiceHint = !serverVoice ? (hold ? "This server has no hold-to-talk voice." : "This server has no hands-free voice.")
+    : !voiceName ? "Choose a voice below first." : "Testers speak and hear the voice below.";
+  const copy = async () => {
+    setBusy(true);
+    setProblems([]);
+    try {
+      await onSave();
+      const fresh = useStore.getState().saved.find((x) => x.id === c.id) || entry;
+      const checked = await api.validate(fresh.design, "text");
+      if (!checked.ok) {
+        const list = [...(checked.findings || [])];
+        if (checked.refusal) list.push({ level: "error", text: `The engine refused the design: ${checked.refusal}` });
+        setProblems(list.length ? list : [{ level: "error", text: "The design cannot run." }]);
+        useStore.getState().setFindings(list);
+        return;
+      }
+      if (!fresh.shareUrl) { setProblems([{ level: "error", text: "The link could not be saved. Try again." }]); return; }
+      if (!navigator.clipboard) { window.prompt("Copy this link:", fresh.shareUrl); return; }
+      await navigator.clipboard.writeText(fresh.shareUrl).catch(() => window.prompt("Copy this link:", fresh.shareUrl));
+      setCopied(true); setTimeout(() => setCopied(false), 1500);
+    } finally { setBusy(false); }
+  };
+  const textOn = entry.shareText !== false;
+  const voiceOn = canVoice && !!entry.shareVoice;
+  const set = (name, on, otherOn) => {
+    if (!on && !otherOn) { setWarning("Testers need at least one way to talk. Tick the other one first."); return; }
+    setWarning("");
+    shareSaved(c.id, { [name]: on });
+  };
+  return createPortal(
+    <div className="fixed inset-y-0 left-0 z-50 flex items-center justify-center" style={{ right: "26rem", background: "var(--scrim)" }} data-testid="share-dialog">
+      <div ref={boxRef} className="flex flex-col gap-4 border p-5" style={{ width: 560, maxWidth: "calc(100% - 2rem)", background: "var(--dialog)", borderColor: "var(--line)" }}>
+        <div className="truncate text-base font-medium">Testing link: {entry.label}</div>
+        <div className="text-xs muted">Anyone with the link can try this conversation. Copy link saves the canvas first, so the link runs what you see.</div>
+        <div className="flex items-stretch gap-2">
+          <div className="min-w-0 flex-1 truncate rounded-lg border px-2 py-1.5 font-mono text-xs" style={{ borderColor: "var(--line)", background: "rgb(31,31,31)" }}
+            data-testid="share-url">{entry.shareUrl || "Saving…"}</div>
+          <button type="button" className="btn btn-teal shrink-0 px-3 py-0 text-xs" onClick={copy} disabled={busy} data-testid="share-dialog-copy">
+            {busy ? "Saving…" : copied ? "Copied" : "Copy link"}
+          </button>
+        </div>
+        <div className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm" style={{ borderColor: "var(--line)", background: "rgb(31,31,31)" }} data-testid="share-tried">
+          {count > 0 ? (
+            <>
+              <span>Tried by others <strong data-testid="share-tried-count">{count}</strong> {count === 1 ? "time" : "times"}</span>
+              <span className="flex-1" />
+              <button type="button" className="btn px-2 py-0 text-xs" onClick={onOpenRuns} data-testid="share-tried-open">See their conversations</button>
+              {entry.shareToken && <a className="text-xs underline muted hover:text-teal-600" href={`/results/${entry.shareToken}`} target="_blank" rel="noreferrer" data-testid="share-tried-results">Results page</a>}
+            </>
+          ) : <span className="muted" data-testid="share-tried-none">No one has tried it yet.</span>}
+        </div>
+        <div className="flex flex-col gap-2" data-testid="share-ways">
+          <div className="text-xs muted">Testers can talk by</div>
+          <label className="flex cursor-pointer items-start gap-2 text-sm" data-testid="share-text">
+            <input type="checkbox" className="mt-1" checked={textOn} onChange={(e) => set("text", e.target.checked, voiceOn)} data-testid="share-text-checkbox" />
+            <span>Text<span className="block text-xs muted">Testers type their answers.</span></span>
+          </label>
+          <label className={`flex items-start gap-2 text-sm ${canVoice ? "cursor-pointer" : "opacity-50"}`} data-testid="share-voice">
+            <input type="checkbox" className="mt-1" checked={voiceOn} disabled={!canVoice}
+              onChange={(e) => set("voice", e.target.checked, textOn)} data-testid="share-voice-checkbox" />
+            <span>Voice<span className="block text-xs muted">{voiceHint}</span></span>
+          </label>
+          <div className="ml-6 flex flex-col gap-2 text-sm" data-testid="share-voice-settings">
+            <label className="flex items-center gap-2">
+              <span className="w-16 shrink-0 text-xs muted">Voice</span>
+              <select className="field min-w-0 flex-1 py-1 text-sm" value={voiceName} disabled={savingDesign}
+                onChange={(e) => changeDesign("voice", e.target.value)} data-testid="share-voice-select">
+                <option value="">Choose a voice</option>
+                {voices.map((v) => <option key={v.name} value={v.name}>{v.displayName} ({String(v.gender || "").toLowerCase()}), {v.name}</option>)}
+              </select>
+            </label>
+            <div className="flex items-start gap-2" role="radiogroup" aria-label="Talking">
+              <span className="w-16 shrink-0 pt-0.5 text-xs muted">Talking</span>
+              <div className="flex flex-col gap-1">
+                {[["free", "Just talk, the microphone is always on"], ["hold", "Hold a button while talking"]].map(([value, text]) => (
+                  <label key={value} className="flex cursor-pointer items-center gap-2">
+                    <input type="radio" name="share-talking" value={value} checked={(entry.design?.talking === "hold" ? "hold" : "free") === value}
+                      disabled={savingDesign} onChange={() => changeDesign("talking", value)} data-testid={`share-talking-${value}`} />
+                    {text}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+          <label className={`ml-6 flex items-start gap-2 text-sm ${voiceOn ? "cursor-pointer" : "opacity-50"}`} data-testid="share-mic">
+            <input type="checkbox" className="mt-1" checked={voiceOn && !!entry.shareMicCheck} disabled={!voiceOn}
+              onChange={(e) => { setWarning(""); shareSaved(c.id, { micCheck: e.target.checked }); }} data-testid="share-mic-checkbox" />
+            <span>Check the microphone before starting<span className="block text-xs muted">Testers say a few words and see the level before the conversation starts.</span></span>
+          </label>
+          {warning && <div className="text-xs" style={{ color: "var(--error)" }} data-testid="share-ways-warning">{warning}</div>}
+        </div>
+        {problems.length > 0 && (
+          <ul className="flex flex-col gap-1 text-xs" style={{ color: "var(--error)" }} data-testid="share-problems">
+            {problems.map((f, i) => <li key={i}>{f.text}</li>)}
+          </ul>
+        )}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 // One saved conversation's row, one line of the label, Copy link, API, and, once someone has tried it,
 // "tried ×N" in place of delete, which opens the testers' conversations in the popup above.
-export function SavedRow({ c, isCurrent, count, onLoad, onDelete }) {
+// Copy link and API belong to the conversation open on the canvas. On the other rows they are greyed out. Clicking one
+// there first asks whether to replace the canvas with that conversation, and after it is open shows the testing link
+// popup or the API popup.
+export function SavedRow({ c, isCurrent, count, onLoad, onSave, onDelete }) {
+  const [shareOpen, setShareOpen] = useState(false);
+  const openAfterLoad = async (open) => { if (isCurrent || await onLoad()) open(true); };
   const [open, setOpen] = useState(false);
   const [apiOpen, setApiOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-  // The testing link is text only, so it can be copied only when the saved design passes the
-  // builder's own text-mode check, the same one the Start buttons use, green when it does and grey when not.
+  // Copy link is green only when the saved design passes the builder's text-mode check, the same one the Start buttons
+  // use, and API shows only then. Text is the check every link needs, since a link falls back to text when voice
+  // cannot run.
   const [textOk, setTextOk] = useState(null);
   useEffect(() => {
     let live = true;
@@ -212,33 +357,16 @@ export function SavedRow({ c, isCurrent, count, onLoad, onDelete }) {
       <div className="flex items-center gap-2">
         <button type="button" className="min-w-0 flex-1 truncate text-left text-sm transition hover:text-teal-600" onClick={onLoad} title={c.label}>{c.label}</button>
         {c.shareUrl && (
-          <button type="button" className={`btn shrink-0 px-2 py-0 text-xs ${textOk ? "btn-teal" : "opacity-40"}`} aria-disabled={!textOk}
-            data-testid="share-copy" data-url={c.shareUrl} data-available={textOk === null ? "unknown" : String(textOk)}
-            title={textOk ? c.shareUrl : "This conversation cannot run as text yet, so its testing link cannot be shared"}
-            onClick={async () => {
-              if (textOk) {
-                // Browsers offer the clipboard only on HTTPS or localhost, so on a plain HTTP server the link is shown to copy by hand.
-                if (!navigator.clipboard) { window.prompt("Copy this link:", c.shareUrl); return; }
-                navigator.clipboard.writeText(c.shareUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); return;
-              }
-              // Grey shows the Start button's own refusal, in text mode, since the link is text only. The same
-              // findings list, so the red messages show above Start and the named nodes and edges turn
-              // red on the canvas; the canvas is checked when this row is the one loaded.
-              const st = useStore.getState();
-              try {
-                const checked = await api.validate(isCurrent ? st.toDesign() : c.design, "text");
-                const list = [...(checked.findings || [])];
-                if (checked.refusal) list.push({ level: "error", text: `The engine refused the design: ${checked.refusal}` });
-                st.setFindings(checked.ok ? [] : (list.length ? list : [{ level: "error", text: "The design cannot run." }]));
-                if (checked.ok) setTextOk(true);
-              } catch (e) { st.setFindings([{ level: "error", text: String(e.message || e) }]); }
-            }}>
-            {copied ? "Copied" : "Copy link"}
+          <button type="button" className={`btn shrink-0 px-2 py-0 text-xs ${isCurrent && textOk ? "btn-teal" : "opacity-40"}`}
+            data-testid="share-copy" data-url={c.shareUrl} data-current={String(isCurrent)} data-available={textOk === null ? "unknown" : String(textOk)}
+            title={isCurrent ? c.shareUrl : "Opens this conversation, then its testing link"}
+            onClick={() => openAfterLoad(setShareOpen)}>
+            Copy link
           </button>
         )}
         {c.shareUrl && c.ConversationDesignAPIKey && textOk && (
-          <button type="button" className="btn btn-other shrink-0 px-2 py-0 text-xs" onClick={() => setApiOpen(true)} data-testid="api-open"
-            title="OpenAI-format requests with this design's key run this design">API</button>
+          <button type="button" className={`btn btn-other shrink-0 px-2 py-0 text-xs ${isCurrent ? "" : "opacity-40"}`} onClick={() => openAfterLoad(setApiOpen)} data-testid="api-open"
+            title={isCurrent ? "OpenAI-format requests with this design's key run this design" : "Opens this conversation, then its API"}>API</button>
         )}
         {count > 0
           ? <button type="button" className="btn shrink-0 px-2 py-0 text-xs" onClick={() => setOpen(!open)}
@@ -247,6 +375,8 @@ export function SavedRow({ c, isCurrent, count, onLoad, onDelete }) {
       </div>
       {open && <RunsDialog ConversationDesignPublicLinkToken={c.shareToken} label={c.label} onClose={() => setOpen(false)} />}
       {apiOpen && <ApiDialog c={c} onClose={() => setApiOpen(false)} />}
+      {shareOpen && <ShareDialog c={c} count={count} onSave={onSave} onClose={() => setShareOpen(false)}
+        onOpenRuns={() => { setShareOpen(false); setOpen(true); }} />}
     </div>
   );
 }

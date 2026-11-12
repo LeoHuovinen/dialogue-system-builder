@@ -212,10 +212,13 @@ function RightSidebar() {
   // The checks run first, for either button, and only an accepted design goes on. Text starts at
   // once, and voice opens the popup, a small microphone check, whose Start enters the conversation.
   const [voiceDialog, setVoiceDialog] = useState(false);
-  // What this server can start. A server without Pipecat answers false for voice, and Start with voice is greyed out.
-  // Until the answer comes, both buttons are live.
-  const [caps, setCaps] = useState({ voice: true, text: true });
-  useEffect(() => { let live = true; api.capabilities().then((c) => { if (live && c) setCaps({ voice: c.voice !== false, text: c.text !== false }); }).catch(() => {}); return () => { live = false; }; }, []);
+  // What this server can start, hands-free voice, hold-to-talk voice and text. Start with voice checks the kind of voice
+  // the design's Talking setting chooses, and is greyed out when the server lacks it. Until the answer comes, both
+  // buttons are live.
+  const [serverCaps, setServerCaps] = useState({ voice: true, press: true, text: true });
+  useEffect(() => { let live = true; api.capabilities().then((c) => { if (live && c) setServerCaps({ voice: c.voice !== false, press: c.press === true, text: c.text !== false }); }).catch(() => {}); return () => { live = false; }; }, []);
+  const talking = useStore((s) => s.talking);
+  const caps = { voice: talking === "hold" ? serverCaps.press : serverCaps.voice, text: serverCaps.text };
   const tryStart = startCheck(toDesign, setChecking, setFindings, (startMode) => {
     if (startMode === "voice") setVoiceDialog(true); else setMode("conversation", startMode);
   });
@@ -246,7 +249,7 @@ function RightSidebar() {
         <FindingsList findings={findings} />
         <div className="flex gap-2">
           <button type="button" className={`action-btn action-btn--solid flex-1 ${accepted && caps.voice ? "start--accepted" : ""}`} onClick={() => tryStart("voice")} disabled={checking || !caps.voice}
-            style={caps.voice ? undefined : { opacity: 0.45 }} title={caps.voice ? undefined : "This server runs without voice"}
+            style={caps.voice ? undefined : { opacity: 0.45 }} title={caps.voice ? undefined : talking === "hold" ? "This server has no hold-to-talk voice" : "This server runs without voice"}
             data-testid="start" data-accepted={accepted === null ? "unknown" : String(accepted)} data-available={String(caps.voice)}>
             {checking ? "Checking…" : "Start with voice"}
           </button>
