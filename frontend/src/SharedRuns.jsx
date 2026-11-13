@@ -20,11 +20,12 @@ const updateSaved = (id, patch) => {
   writeSaved(next);
   setSaved(next);
 };
-// Save makes the testing link. The first save of a conversation creates it, and later saves update the
-// design behind the same link, where the runs already made stay listed. The entry's ConversationDesignAPIKey goes along
-// in X-Conversation-Design-API-Key, and the server's reply refreshes it. ``extra`` may set the link's ``text``,
-// ``voice`` and ``micCheck`` to true or false. The server's answer is kept in the entry as shareText, shareVoice and
-// shareMicCheck, and a setting not in ``extra`` stays as the link had it.
+// Save makes the testing link. The first save of a conversation creates it, and later saves update the design behind
+// the same link, where the runs already made stay listed. The entry's ConversationDesignAPIKey goes along in
+// X-Conversation-Design-API-Key, and the server's reply refreshes it. ``extra`` may set the link's ``text``, ``voice``
+// and ``micCheck`` to true or false, and ``MultimodalElement`` to the name of the multimodal element shown above the
+// chat or an empty string. The server's answer is kept in the entry as shareText, shareVoice, shareMicCheck and
+// shareMultimodalElement, and a setting not in ``extra`` stays as the link had it.
 export async function shareSaved(id, extra = {}) {
   const entry = useStore.getState().saved.find((c) => c.id === id);
   if (!entry) return;
@@ -36,7 +37,7 @@ export async function shareSaved(id, extra = {}) {
     const j = await r.json().catch(() => ({}));
     if (r.ok && j.ConversationDesignPublicLinkToken) {
       updateSaved(id, { shareToken: j.ConversationDesignPublicLinkToken, shareUrl: j.url, ConversationDesignAPIKey: j.ConversationDesignAPIKey,
-        shareText: j.text !== false, shareVoice: !!j.voice, shareMicCheck: !!j.micCheck });
+        shareText: j.text !== false, shareVoice: !!j.voice, shareMicCheck: !!j.micCheck, shareMultimodalElement: j.MultimodalElement || "" });
     }
   } catch {}
 }
@@ -194,15 +195,25 @@ function ApiDialog({ c, onClose }) {
   );
 }
 
-// The testing link popup, which a saved conversation's Copy link opens when that conversation is open on the canvas.
-// It shows the link and its own Copy link button, which first saves the canvas into the link the way Save does, so
-// testers get what is on the canvas. A design that cannot run as text is not copied, and the Start check's findings
-// show instead. Below the link, a box shows how many testers have tried it, from the row's count that refreshes every
-// 15 seconds, with a button that opens their conversations and a link to the results page. With no testers yet it says
-// "No one has tried it yet." Then come checkboxes for how testers may talk, Text, Voice spoken in the design's TTS
-// voice, and beneath Voice whether their microphone is checked first. Voice can be ticked only when the design has a
-// TTS voice and the server has the kind of voice the design needs. One of Text and Voice must stay ticked, so unticking
-// the only ticked one shows a red warning and changes nothing.
+// The choices for the multimodal element above the chat, each with the address of IL's example page the builder serves
+// for it. Each tile shows that page itself, scaled down. A choice with a page is offered only when /api/capabilities
+// lists its name among the multimodal elements the server found. A link whose saved choice the server no longer lists
+// shows None as chosen, which is what its testers see.
+const MULTIMODAL_ELEMENT_OPTIONS = [
+  { name: "", label: "None", page: "" },
+  { name: "plasma", label: "Plasma", page: "/multimodal-element/plasma/index.html" },
+];
+
+// The testing link popup, which a saved conversation's Copy link opens when that conversation is open on the canvas. It
+// shows the link and its own Copy link button, which first saves the canvas into the link the way Save does, so testers
+// get what is on the canvas. A design that cannot run as text is not copied, and the Start check's findings show
+// instead. Below the link, a box shows how many testers have tried it, from the row's count that refreshes every 15
+// seconds, with a button that opens their conversations and a link to the results page. With no testers yet it says "No
+// one has tried it yet." Then come checkboxes for how testers may talk, Text, Voice spoken in the design's TTS voice,
+// and beneath Voice whether their microphone is checked first. Below those, a row of thumbnails lets the person sharing
+// choose the multimodal element shown above the chat, offering only the pages this server found. Voice can be ticked
+// only when the design has a TTS voice and the server has the kind of voice the design needs. One of Text and Voice
+// must stay ticked, so unticking the only ticked one shows a red warning and changes nothing.
 function ShareDialog({ c, count, onOpenRuns, onSave, onClose }) {
   const boxRef = useRef(null);
   const [copied, setCopied] = useState(false);
@@ -226,7 +237,11 @@ function ShareDialog({ c, count, onOpenRuns, onSave, onClose }) {
     return () => document.removeEventListener("mousedown", onDown);
   }, [onClose]);
   const hold = entry.design?.talking === "hold";
-  useEffect(() => { api.capabilities().then((x) => setServerVoice(hold ? x?.press === true : x?.voice !== false)).catch(() => {}); }, [hold]);
+  const [serverMultimodalElements, setServerMultimodalElements] = useState([]);
+  useEffect(() => { api.capabilities().then((x) => {
+    setServerVoice(hold ? x?.press === true : x?.voice !== false);
+    setServerMultimodalElements(Array.isArray(x?.MultimodalElements) ? x.MultimodalElements : []);
+  }).catch(() => {}); }, [hold]);
   const voiceName = entry.design?.voice || "";
   const canVoice = serverVoice && !!voiceName;
   const voiceHint = !serverVoice ? (hold ? "This server has no hold-to-talk voice." : "This server has no hands-free voice.")
@@ -318,6 +333,30 @@ function ShareDialog({ c, count, onOpenRuns, onSave, onClose }) {
               onChange={(e) => { setWarning(""); shareSaved(c.id, { micCheck: e.target.checked }); }} data-testid="share-mic-checkbox" />
             <span>Check the microphone before starting<span className="block text-xs muted">Testers say a few words and see the level before the conversation starts.</span></span>
           </label>
+          <div className={`ml-6 flex flex-col gap-1 text-sm ${voiceOn ? "" : "opacity-50"}`} data-testid="share-multimodal-element">
+            <span>Multimodal element above the chat<span className="block text-xs muted">An animation above the chat that moves while the assistant speaks.</span></span>
+            <div className="flex gap-2">
+              {MULTIMODAL_ELEMENT_OPTIONS.filter((o) => !o.name || serverMultimodalElements.includes(o.name)).map((o) => {
+                const saved = serverMultimodalElements.includes(entry.shareMultimodalElement) ? entry.shareMultimodalElement : "";
+                const chosen = voiceOn && saved === o.name;
+                return (
+                  <button key={o.name || "none"} type="button" disabled={!voiceOn} aria-pressed={chosen}
+                    onClick={() => { setWarning(""); shareSaved(c.id, { MultimodalElement: o.name }); }}
+                    className="flex w-28 flex-col overflow-hidden rounded-lg border text-xs"
+                    style={{ borderColor: chosen ? "var(--accent, #22d3ee)" : "var(--line)", borderWidth: chosen ? 2 : 1 }}
+                    data-testid={`share-multimodal-element-${o.name || "none"}`}>
+                    <div className="relative h-16 w-full overflow-hidden" style={{ background: "#1f2937" }}>
+                      {o.page
+                        ? <iframe src={o.page} title={o.label} tabIndex={-1} className="pointer-events-none absolute left-0 top-0 border-0"
+                            style={{ width: 448, height: 256, transform: "scale(0.25)", transformOrigin: "0 0" }} />
+                        : null}
+                    </div>
+                    <span className="px-2 py-1 text-left">{o.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           {warning && <div className="text-xs" style={{ color: "var(--error)" }} data-testid="share-ways-warning">{warning}</div>}
         </div>
         {problems.length > 0 && (

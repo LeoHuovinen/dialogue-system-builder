@@ -83,6 +83,34 @@ def _VoiceRunsHere(design: dict[str, Any]) -> bool:
     return PRESS if _VoiceWayOf(design) == "press" else VOICE
 
 
+# The folder inside IL's examples folder that holds the page of each multimodal element, keyed by its name in
+# ``share.TESTING_LINK_MULTIMODAL_ELEMENTS``.
+_MULTIMODAL_ELEMENT_EXAMPLE_FOLDERS = {"plasma": "7-plasma-visualizer-pipecat"}
+# The multimodal elements whose pages ``build`` found in IL's examples folder and serves at
+# "/multimodal-element/<name>/".
+MULTIMODAL_ELEMENTS_SERVED: set[str] = set()
+
+
+def _MultimodalElementPageFolder(name: str) -> str | None:
+    """Return the page folder of the multimodal element ``name`` inside IL's examples folder. Returns ``None`` when
+    ``name`` is not in ``_MULTIMODAL_ELEMENT_EXAMPLE_FOLDERS``, when IL was installed without its examples folder,
+    or when the folder has no ``index.html``. The examples folder sits beside the package only when IL is installed
+    in editable mode from a clone of its repository, which is how the README installs it, and a plain ``pip
+    install`` leaves it out."""
+    import illocutionary_lifecycles
+    examples = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(illocutionary_lifecycles.__file__))), "examples")
+    folder = os.path.join(examples, _MULTIMODAL_ELEMENT_EXAMPLE_FOLDERS.get(name, ""), "page")
+    return folder if name in _MULTIMODAL_ELEMENT_EXAMPLE_FOLDERS and os.path.isfile(os.path.join(folder, "index.html")) else None
+
+
+def _MultimodalElementShown(link: dict[str, Any], voice: bool) -> str:
+    """Return the name of the multimodal element a tester of the stored ``link`` sees above the chat, or an empty string
+    for none. It is shown only when the link offers voice, since it moves with the assistant's speech, and only when
+    this server found its page."""
+    MultimodalElement = share.TestingLinkMultimodalElement(link)
+    return MultimodalElement if voice and MultimodalElement in MULTIMODAL_ELEMENTS_SERVED else ""
+
+
 @router.post("/api/sessions")
 async def reserve_session(request: Request):
     """Reserve one conversation session and return ``{"ok", "session_id", "endings"}``, the id the page connects to
@@ -162,15 +190,18 @@ async def generate(request: Request):
 
 @router.post("/api/share")
 async def share_design(request: Request):
-    """Store the body's ``design`` behind a testing link, the existing one named by ``ConversationDesignPublicLinkToken`` or a new one, and return
-    ``{"ConversationDesignPublicLinkToken", "link", "url", "ConversationDesignAPIKey", "text", "voice", "micCheck"}``. A ``text``,
-    ``voice`` or ``micCheck`` key in the body sets that link setting to true or false. A key left out of the body leaves
-    that setting as it was. ``url`` names the host the request
-    reached, so the link works for others behind a proxy that passes ``X-Forwarded-Proto`` and ``Host``.
-    ``ConversationDesignAPIKey`` is the link's API key, made by this Save when the link had none. A Save that names an
-    existing link which already has an API key must carry that key in the header ``X-Conversation-Design-API-Key``, so
-    that a person who only holds the public link code cannot overwrite the design. Answers 403 without it and 400 for a
-    design that does not compile."""
+    """Store the body's ``design`` behind a testing link, the existing one named by
+    ``ConversationDesignPublicLinkToken`` or a new one, and return ``{"ConversationDesignPublicLinkToken", "link",
+    "url", "ConversationDesignAPIKey", "text", "voice", "micCheck", "MultimodalElement"}``. A ``text``, ``voice`` or
+    ``micCheck`` key in the body sets that link setting to true or false, and a ``MultimodalElement`` key sets the
+    multimodal element shown above the chat, by its name or an empty string for none. The answer's
+    ``MultimodalElement`` is that name, while the design route's ``MultimodalElement`` is the page's address. A key
+    left out of the body leaves that setting as it was. ``url`` names the host the request reached, so the link
+    works for others behind a proxy that passes ``X-Forwarded-Proto`` and ``Host``. ``ConversationDesignAPIKey`` is
+    the link's API key, made by this Save when the link had none. A Save that names an existing link which already
+    has an API key must carry that key in the header ``X-Conversation-Design-API-Key``, so that a person who only
+    holds the public link code cannot overwrite the design. Answers 403 without it and 400 for a design that does
+    not compile."""
     body = await _json_body(request)
     if not isinstance(body, dict) or not isinstance(body.get("design"), dict):
         return _no_design()
@@ -185,14 +216,16 @@ async def share_design(request: Request):
     def setting(name: str) -> bool | None:
         return bool(body[name]) if name in body else None
     ConversationDesignPublicLinkToken = share.SaveTestingLink(body["design"], str(body.get("label") or ""), wanted,
-                                                              setting("voice"), setting("text"), setting("micCheck"))
+                                                              setting("voice"), setting("text"), setting("micCheck"),
+                                                              str(body["MultimodalElement"] or "") if "MultimodalElement" in body else None)
     link = share.TestingLinkDesign(ConversationDesignPublicLinkToken) or {}
     proto = request.headers.get("x-forwarded-proto") or request.url.scheme
     host = request.headers.get("host") or request.url.netloc
     return JSONResponse({"ConversationDesignPublicLinkToken": ConversationDesignPublicLinkToken, "link": f"/try/{ConversationDesignPublicLinkToken}",
                          "url": f"{proto}://{host}/try/{ConversationDesignPublicLinkToken}",
                          "ConversationDesignAPIKey": share.ConversationDesignAPIKey(ConversationDesignPublicLinkToken),
-                         "text": share.TestingLinkText(link), "voice": bool(link.get("voice")), "micCheck": bool(link.get("mic_check"))})
+                         "text": share.TestingLinkText(link), "voice": bool(link.get("voice")), "micCheck": bool(link.get("mic_check")),
+                         "MultimodalElement": share.TestingLinkMultimodalElement(link)})
 
 
 @router.get("/api/share/counts")
@@ -203,16 +236,20 @@ async def share_counts(links: str = ""):
 
 @router.get("/api/share/{ConversationDesignPublicLinkToken}/design")
 async def shared_design(ConversationDesignPublicLinkToken: str):
-    """Return the design and label behind the testing link ``ConversationDesignPublicLinkToken``, or 404 for an unknown link.
-    ``voice`` is true when the link allows voice and this server has the mount the design needs. ``text`` is true when the
-    link allows text, and also whenever ``voice`` is false, so testers always have a way to talk. ``micCheck`` says
-    whether a voice start opens the microphone check first."""
+    """Return the design and label behind the testing link ``ConversationDesignPublicLinkToken``, or 404 for an unknown
+    link. ``voice`` is true when the link allows voice and this server has the mount the design needs. ``text`` is
+    true when the link allows text, and also whenever ``voice`` is false, so testers always have a way to talk.
+    ``micCheck`` says whether a voice start opens the microphone check first. ``MultimodalElement`` is the address
+    of the multimodal element's page shown above the chat, or an empty string for none, as
+    ``_MultimodalElementShown`` decides. It is an address here and a name in the ``/api/share`` route."""
     link = share.TestingLinkDesign(ConversationDesignPublicLinkToken)
     if link is None:
         return JSONResponse({"error": "unknown link"}, status_code=404)
     voice = _VoiceRunsHere(link["design"]) and share.TestingLinkVoice(link)
+    MultimodalElement = _MultimodalElementShown(link, voice)
     return JSONResponse({"design": link["design"], "label": link.get("label") or "", "voice": voice,
-                         "text": share.TestingLinkText(link) or not voice, "micCheck": bool(link.get("mic_check"))})
+                         "text": share.TestingLinkText(link) or not voice, "micCheck": bool(link.get("mic_check")),
+                         "MultimodalElement": f"/multimodal-element/{MultimodalElement}/index.html" if MultimodalElement else ""})
 
 
 @router.get("/api/share/{ConversationDesignPublicLinkToken}/runs")
@@ -231,10 +268,12 @@ async def health():
 
 @router.get("/api/capabilities")
 async def capabilities():
-    """Return ``{"voice", "press", "text"}``, each true when this server can start that kind of conversation. ``voice``
-    is hands-free voice on Pipecat, ``press`` is hold-to-talk voice, and ``text`` is typing. The page greys out every Start
-    button the server cannot serve."""
-    return JSONResponse({"voice": VOICE, "press": PRESS, "text": True})
+    """Return ``{"voice", "press", "text", "MultimodalElements"}``. The first three are each true when this server can
+    start that kind of conversation. ``voice`` is hands-free voice on Pipecat, ``press`` is hold-to-talk voice, and
+    ``text`` is typing. The page greys out every Start button the server cannot serve. ``MultimodalElements`` lists
+    the names of the multimodal elements whose pages this server found, and the testing link window offers only
+    those."""
+    return JSONResponse({"voice": VOICE, "press": PRESS, "text": True, "MultimodalElements": sorted(MULTIMODAL_ELEMENTS_SERVED)})
 
 
 @router.post("/api/flow")
@@ -353,6 +392,14 @@ def build(voice: bool = True, stt_vendor: str = "azure") -> Any:
     for folder in ("assets", "il"):
         if os.path.isdir(os.path.join(_DIST, folder)):
             app.mount(f"/{folder}", StaticFiles(directory=os.path.join(_DIST, folder)), name=folder)
+    MULTIMODAL_ELEMENTS_SERVED.clear()
+    for name in share.TESTING_LINK_MULTIMODAL_ELEMENTS:   # each multimodal element's page, served from IL's examples folder
+        folder = _MultimodalElementPageFolder(name)
+        if folder:
+            app.mount(f"/multimodal-element/{name}", StaticFiles(directory=folder), name=f"multimodal-element-{name}")
+            MULTIMODAL_ELEMENTS_SERVED.add(name)
+        else:
+            logger.info("the multimodal element %s is off, since its page was not found in IL's examples folder", name)
     return app
 
 

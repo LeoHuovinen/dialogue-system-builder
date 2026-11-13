@@ -32,6 +32,12 @@ from dialogue_system_builder.compile import compile_design
 # Session id -> (the time its events folder last changed, what TestingLinkRuns needs of it, or None when it is no run).
 _READ_RUNS: dict[str, tuple[float, dict[str, Any] | None]] = {}
 
+# The names a link's multimodal element may take, stored in the link file under the key "MultimodalElement". Each names
+# one of IL's example pages, which the testing link's page shows above the chat. ``dialogue_system_builder.app`` serves
+# each from IL's own examples folder, and the testing link's page hands it every call of the chat's conversation, so it
+# moves with the conversation the tester is having.
+TESTING_LINK_MULTIMODAL_ELEMENTS = ("plasma",)
+
 
 def _link_path(ConversationDesignPublicLinkToken: str) -> str | None:
     """Return the file of the link ``ConversationDesignPublicLinkToken``, or ``None`` when ``ConversationDesignPublicLinkToken`` holds anything but letters, digits, "-" and
@@ -55,16 +61,20 @@ def TestingLinkDesign(ConversationDesignPublicLinkToken: str) -> dict[str, Any] 
 
 
 def SaveTestingLink(design: dict[str, Any], label: str, ConversationDesignPublicLinkToken: str | None = None,
-                    voice: bool | None = None, text: bool | None = None, mic_check: bool | None = None) -> str:
-    """Store ``design`` and ``label`` behind the link ``ConversationDesignPublicLinkToken`` when that link exists, so a later Save of the same
-    conversation updates the design behind its link and keeps its runs and its ``ConversationDesignAPIKey``, or behind a new
-    random link code otherwise. When the link file has no ``ConversationDesignAPIKey``, this function makes one, "sk-" and 48
-    random letters and digits, OpenAI's key format so that a tool written for OpenAI's API accepts it in its key setting, and
-    the ``/api/share`` route returns it to the browser that saved. ``text`` and ``voice`` say which start buttons the link's testers see,
-    and ``mic_check`` says whether starting with voice opens the microphone check first. A setting given as ``None`` stays
-    as the link had it, and a new link starts with text on, voice off and the microphone check off. If a save would turn
-    off both text and voice, text is turned back on, so testers always have a way to talk. The route, not this function,
-    decides whether a Save may change an existing link. Returns the link code."""
+                    voice: bool | None = None, text: bool | None = None, mic_check: bool | None = None,
+                    MultimodalElement: str | None = None) -> str:
+    """Store ``design`` and ``label`` behind the link ``ConversationDesignPublicLinkToken`` when that link exists, so a
+    later Save of the same conversation updates the design behind its link and keeps its runs and its
+    ``ConversationDesignAPIKey``, or behind a new random link code otherwise. When the link file has no
+    ``ConversationDesignAPIKey``, this function makes one, "sk-" and 48 random letters and digits, OpenAI's key
+    format so that a tool written for OpenAI's API accepts it in its key setting, and the ``/api/share`` route
+    returns it to the browser that saved. ``text`` and ``voice`` say which start buttons the link's testers see, and
+    ``mic_check`` says whether starting with voice opens the microphone check first. ``MultimodalElement`` names the
+    multimodal element shown above the chat, one of ``TESTING_LINK_MULTIMODAL_ELEMENTS``, and an empty string or an
+    unknown name shows none. A setting given as ``None`` stays as the link had it, and a new link starts with text
+    on, voice off, the microphone check off and no multimodal element. If a save would turn off both text and voice,
+    text is turned back on, so testers always have a way to talk. The route, not this function, decides whether a
+    Save may change an existing link. Returns the link code."""
     link = TestingLinkDesign(ConversationDesignPublicLinkToken) if ConversationDesignPublicLinkToken else None
     if link is None:
         ConversationDesignPublicLinkToken, link = secrets.token_urlsafe(9), {}
@@ -72,6 +82,8 @@ def SaveTestingLink(design: dict[str, Any], label: str, ConversationDesignPublic
     for name, value in (("voice", voice), ("text", text), ("mic_check", mic_check)):
         if value is not None:
             link[name] = bool(value)
+    if MultimodalElement is not None:
+        link["MultimodalElement"] = MultimodalElement if MultimodalElement in TESTING_LINK_MULTIMODAL_ELEMENTS else ""
     if not TestingLinkText(link) and not link.get("voice"):
         link["text"] = True
     if not link.get("ConversationDesignAPIKey"):
@@ -92,6 +104,14 @@ def TestingLinkVoice(link: dict[str, Any]) -> bool:
     """Return whether testers of the stored ``link`` may start it with voice. That needs two things, the link's voice
     setting turned on by the person who shared it, and a TTS voice chosen in the link's design."""
     return bool(link.get("voice")) and bool(str((link.get("design") or {}).get("voice") or ""))
+
+
+def TestingLinkMultimodalElement(link: dict[str, Any]) -> str:
+    """Return the name of the multimodal element the stored ``link`` shows above the chat, one of
+    ``TESTING_LINK_MULTIMODAL_ELEMENTS``, or an empty string when it shows none. A link saved before multimodal
+    elements existed shows none."""
+    MultimodalElement = str(link.get("MultimodalElement") or "")
+    return MultimodalElement if MultimodalElement in TESTING_LINK_MULTIMODAL_ELEMENTS else ""
 
 
 def ConversationDesignAPIKey(ConversationDesignPublicLinkToken: str) -> str | None:

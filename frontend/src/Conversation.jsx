@@ -12,8 +12,10 @@
 // connection. The view's adapterCallback(e) moves the lit node on each
 // ConversationStateChangedAdapterCallbackHandlerEvent and adds an answer on each
 // QuestionAnsweredAdapterCallbackHandlerEvent, userMessage and botMessage fill the chat through chatReducer from
-// chat/FlowChat.jsx, and phase follows listening, thinking and speaking on WebRTC voice. Imported by App.jsx and
-// try.jsx, and it imports nothing of Pipecat, which IL's voice script loads itself.
+// chat/FlowChat.jsx, and phase follows listening, thinking and speaking on WebRTC voice. On a testing link that shows a
+// multimodal element above the chat, try.jsx passes a ``MultimodalElement``, an object that gets every call the chat
+// gets and forwards each to that element's page. Imported by App.jsx and try.jsx, and it imports nothing of Pipecat,
+// which IL's voice script loads itself.
 import { useEffect, useReducer, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useStore } from "./store";
@@ -30,7 +32,7 @@ function questionsOf(state, index) {
   return (node?.data?.questions || []).map((q) => (typeof q === "string" ? q : q?.text || ""));
 }
 
-export function Conversation({ ConversationDesignPublicLinkToken = null }) {
+export function Conversation({ ConversationDesignPublicLinkToken = null, MultimodalElement = null }) {
   const toDesign = useStore((s) => s.toDesign);
   const setMode = useStore((s) => s.setMode);
   const setLive = useStore((s) => s.setLive);
@@ -98,11 +100,12 @@ export function Conversation({ ConversationDesignPublicLinkToken = null }) {
         const { ConnectConversation } = await import(/* @vite-ignore */ `${location.origin}/il/ConnectConversation.js`);
         if (closed) return;
         const sid = encodeURIComponent(reserved.session_id);
+        const views = MultimodalElement ? [view, MultimodalElement] : [view];
         connection.current = await ConnectConversation(way === "voice"
-          ? { way, requestData: { session_id: reserved.session_id }, views: [view] }
+          ? { way, requestData: { session_id: reserved.session_id }, views }
           : way === "press"
-            ? { way, path: `/press?session_id=${sid}`, views: [view], ...(touch ? { clickTalk: holdButton.current } : { talk: holdButton.current }) }
-            : { way, path: `/ws?session_id=${sid}`, views: [view] });
+            ? { way, path: `/press?session_id=${sid}`, views, ...(touch ? { clickTalk: holdButton.current } : { talk: holdButton.current }) }
+            : { way, path: `/ws?session_id=${sid}`, views });
         setPhase("live");
       } catch (e) { setError(String(e.message || e)); setPhase("error"); }
     })();
