@@ -32,11 +32,14 @@ from dialogue_system_builder.compile import compile_design
 # Session id -> (the time its events folder last changed, what TestingLinkRuns needs of it, or None when it is no run).
 _READ_RUNS: dict[str, tuple[float, dict[str, Any] | None]] = {}
 
-# The names a link's multimodal element may take, stored in the link file under the key "MultimodalElement". Each names
-# one of IL's example pages, which the testing link's page shows above the chat. ``dialogue_system_builder.app`` serves
-# each from IL's own examples folder, and the testing link's page hands it every call of the chat's conversation, so it
-# moves with the conversation the tester is having.
-TESTING_LINK_MULTIMODAL_ELEMENTS = ("plasma",)
+# The ``MultimodalElement`` names a link may store. "plasma", "vrm" and "rive" select the Plasma animation, the VRM
+# character and the Rive character, whose ``index.html`` files sit in IL's ``examples`` folder. The testing link view
+# shows the chosen animation or character in the frame above the chat and forwards every call of the chat's
+# conversation into that frame. Adding a fourth name means editing up to five lists, namely this tuple,
+# ``_MULTIMODAL_ELEMENT_EXAMPLE_FOLDERS`` and ``_MULTIMODAL_ELEMENT_CHARACTER_FILES`` in ``dialogue_system_builder.app``,
+# ``MULTIMODAL_ELEMENT_OPTIONS`` in frontend/src/SharedRuns.jsx, and ``MULTIMODAL_ELEMENT_HEIGHTS`` in
+# frontend/src/multimodalElementFrame.js.
+TESTING_LINK_MULTIMODAL_ELEMENTS = ("plasma", "vrm", "rive")
 
 
 def _link_path(ConversationDesignPublicLinkToken: str) -> str | None:
@@ -69,12 +72,12 @@ def SaveTestingLink(design: dict[str, Any], label: str, ConversationDesignPublic
     ``ConversationDesignAPIKey``, this function makes one, "sk-" and 48 random letters and digits, OpenAI's key
     format so that a tool written for OpenAI's API accepts it in its key setting, and the ``/api/share`` route
     returns it to the browser that saved. ``text`` and ``voice`` say which start buttons the link's testers see, and
-    ``mic_check`` says whether starting with voice opens the microphone check first. ``MultimodalElement`` names the
-    multimodal element shown above the chat, one of ``TESTING_LINK_MULTIMODAL_ELEMENTS``, and an empty string or an
-    unknown name shows none. A setting given as ``None`` stays as the link had it, and a new link starts with text
-    on, voice off, the microphone check off and no multimodal element. If a save would turn off both text and voice,
-    text is turned back on, so testers always have a way to talk. The route, not this function, decides whether a
-    Save may change an existing link. Returns the link code."""
+    ``mic_check`` says whether starting with voice opens the microphone check first. ``MultimodalElement`` chooses the
+    animation or character above the chat, and an empty string or a name outside
+    ``TESTING_LINK_MULTIMODAL_ELEMENTS`` stores none. A setting given as ``None`` stays as the link had it, and a
+    new link starts with text on, voice off, the microphone check off and nothing above the chat. If a save would
+    turn off both text and voice, text is turned back on, so testers always have a way to talk. The route, not this
+    function, decides whether a Save may change an existing link. Returns the link code."""
     link = TestingLinkDesign(ConversationDesignPublicLinkToken) if ConversationDesignPublicLinkToken else None
     if link is None:
         ConversationDesignPublicLinkToken, link = secrets.token_urlsafe(9), {}
@@ -108,8 +111,7 @@ def TestingLinkVoice(link: dict[str, Any]) -> bool:
 
 def TestingLinkMultimodalElement(link: dict[str, Any]) -> str:
     """Return the name of the multimodal element the stored ``link`` shows above the chat, one of
-    ``TESTING_LINK_MULTIMODAL_ELEMENTS``, or an empty string when it shows none. A link saved before multimodal
-    elements existed shows none."""
+    ``TESTING_LINK_MULTIMODAL_ELEMENTS``, or an empty string when the link stores no such name."""
     MultimodalElement = str(link.get("MultimodalElement") or "")
     return MultimodalElement if MultimodalElement in TESTING_LINK_MULTIMODAL_ELEMENTS else ""
 

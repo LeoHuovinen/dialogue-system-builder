@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useStore } from "./store";
 import { api } from "./api";
+import { MULTIMODAL_ELEMENT_BACKGROUND, hideExamplePageExtras, multimodalElementPage } from "./multimodalElementFrame";
 
 const SAVED_KEY = "course-builder.saved-conversations";
 const writeSaved = (list) => { try { localStorage.setItem(SAVED_KEY, JSON.stringify(list)); } catch {} };
@@ -195,13 +196,16 @@ function ApiDialog({ c, onClose }) {
   );
 }
 
-// The choices for the multimodal element above the chat, each with the address of IL's example page the builder serves
-// for it. Each tile shows that page itself, scaled down. A choice with a page is offered only when /api/capabilities
-// lists its name among the multimodal elements the server found. A link whose saved choice the server no longer lists
-// shows None as chosen, which is what its testers see.
+// The tiles offered for the multimodal element above the chat. Each tile runs the Plasma animation, VRM character or
+// Rive character itself, scaled down and disconnected from any conversation. "None" is always offered. Another tile
+// appears when /api/capabilities lists its name, or when the link stores that name although this server cannot serve
+// the file. Such a tile shows as chosen, cannot be picked, and carries "(not on this server)", since testers then see
+// nothing above the chat.
 const MULTIMODAL_ELEMENT_OPTIONS = [
-  { name: "", label: "None", page: "" },
-  { name: "plasma", label: "Plasma", page: "/multimodal-element/plasma/index.html" },
+  { name: "", label: "None" },
+  { name: "plasma", label: "Plasma" },
+  { name: "vrm", label: "3D character" },
+  { name: "rive", label: "2D character" },
 ];
 
 // The testing link popup, which a saved conversation's Copy link opens when that conversation is open on the canvas. It
@@ -210,8 +214,9 @@ const MULTIMODAL_ELEMENT_OPTIONS = [
 // instead. Below the link, a box shows how many testers have tried it, from the row's count that refreshes every 15
 // seconds, with a button that opens their conversations and a link to the results page. With no testers yet it says "No
 // one has tried it yet." Then come checkboxes for how testers may talk, Text, Voice spoken in the design's TTS voice,
-// and beneath Voice whether their microphone is checked first. Below those, a row of thumbnails lets the person sharing
-// choose the multimodal element shown above the chat, offering only the pages this server found. Voice can be ticked
+// and beneath Voice whether their microphone is checked first. Below those, a row of tiles lets the author choose the
+// animation or character above the chat, as MULTIMODAL_ELEMENT_OPTIONS describes. Picking requires Voice ticked, since
+// every choice moves only with the assistant's voice, and with Voice unticked no tile shows as chosen. Voice can be ticked
 // only when the design has a TTS voice and the server has the kind of voice the design needs. One of Text and Voice
 // must stay ticked, so unticking the only ticked one shows a red warning and changes nothing.
 function ShareDialog({ c, count, onOpenRuns, onSave, onClose }) {
@@ -334,24 +339,25 @@ function ShareDialog({ c, count, onOpenRuns, onSave, onClose }) {
             <span>Check the microphone before starting<span className="block text-xs muted">Testers say a few words and see the level before the conversation starts.</span></span>
           </label>
           <div className={`ml-6 flex flex-col gap-1 text-sm ${voiceOn ? "" : "opacity-50"}`} data-testid="share-multimodal-element">
-            <span>Multimodal element above the chat<span className="block text-xs muted">An animation above the chat that moves while the assistant speaks.</span></span>
-            <div className="flex gap-2">
-              {MULTIMODAL_ELEMENT_OPTIONS.filter((o) => !o.name || serverMultimodalElements.includes(o.name)).map((o) => {
-                const saved = serverMultimodalElements.includes(entry.shareMultimodalElement) ? entry.shareMultimodalElement : "";
-                const chosen = voiceOn && saved === o.name;
+            <span>Multimodal element above the chat<span className="block text-xs muted">An animation or character that moves while the assistant speaks.</span></span>
+            <div className="flex flex-wrap gap-2">
+              {MULTIMODAL_ELEMENT_OPTIONS.filter((o) => !o.name || serverMultimodalElements.includes(o.name) || o.name === (entry.shareMultimodalElement || "")).map((o) => {
+                const served = !o.name || serverMultimodalElements.includes(o.name);
+                const chosen = voiceOn && (entry.shareMultimodalElement || "") === o.name;
                 return (
-                  <button key={o.name || "none"} type="button" disabled={!voiceOn} aria-pressed={chosen}
+                  <button key={o.name || "none"} type="button" disabled={!voiceOn || !served} aria-pressed={chosen}
                     onClick={() => { setWarning(""); shareSaved(c.id, { MultimodalElement: o.name }); }}
                     className="flex w-28 flex-col overflow-hidden rounded-lg border text-xs"
                     style={{ borderColor: chosen ? "var(--accent, #22d3ee)" : "var(--line)", borderWidth: chosen ? 2 : 1 }}
                     data-testid={`share-multimodal-element-${o.name || "none"}`}>
-                    <div className="relative h-16 w-full overflow-hidden" style={{ background: "#1f2937" }}>
-                      {o.page
-                        ? <iframe src={o.page} title={o.label} tabIndex={-1} className="pointer-events-none absolute left-0 top-0 border-0"
+                    <div className="relative h-16 w-full overflow-hidden" style={{ background: MULTIMODAL_ELEMENT_BACKGROUND }}>
+                      {o.name && served
+                        ? <iframe src={multimodalElementPage(o.name)} title={o.label} tabIndex={-1} onLoad={(e) => hideExamplePageExtras(e.currentTarget)}
+                            className="pointer-events-none absolute left-0 top-0 border-0"
                             style={{ width: 448, height: 256, transform: "scale(0.25)", transformOrigin: "0 0" }} />
                         : null}
                     </div>
-                    <span className="px-2 py-1 text-left">{o.label}</span>
+                    <span className="px-2 py-1 text-left">{o.label}{served ? "" : " (not on this server)"}</span>
                   </button>
                 );
               })}

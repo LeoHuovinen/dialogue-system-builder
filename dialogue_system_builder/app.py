@@ -20,6 +20,7 @@ from __future__ import annotations
 import datetime
 import logging
 import os
+import re
 import sys
 import uuid
 from typing import Any
@@ -83,30 +84,47 @@ def _VoiceRunsHere(design: dict[str, Any]) -> bool:
     return PRESS if _VoiceWayOf(design) == "press" else VOICE
 
 
-# The folder inside IL's examples folder that holds the page of each multimodal element, keyed by its name in
-# ``share.TESTING_LINK_MULTIMODAL_ELEMENTS``.
-_MULTIMODAL_ELEMENT_EXAMPLE_FOLDERS = {"plasma": "7-plasma-visualizer-pipecat"}
-# The multimodal elements whose pages ``build`` found in IL's examples folder and serves at
-# "/multimodal-element/<name>/".
+# The IL folder holding each multimodal element's ``index.html``, keyed by ``MultimodalElement`` name. The VRM and Rive
+# characters come from IL's hands-free voice examples. IL's hold-to-talk copies differ only in talk buttons, which the
+# chat replaces, so hands-free copies also serve hold-to-talk links.
+_MULTIMODAL_ELEMENT_EXAMPLE_FOLDERS = {"plasma": "7-plasma-visualizer-pipecat", "vrm": "5-vrm-pipecat", "rive": "6-rive-pipecat"}
+# IL ships no character file for the VRM or Rive character. Each entry gives the subfolder beside ``index.html`` where a
+# downloaded file belongs, then the script listing accepted file names. A regular expression reads ``file: "<name>"``
+# from that script, so a change in how IL writes it breaks this check.
+_MULTIMODAL_ELEMENT_CHARACTER_FILES = {"vrm": ("vrm", "pipecat_vrm.js"), "rive": ("rive", "pipecat_rive.js")}
+# Names whose ``index.html`` ``build`` found ready, served under "/multimodal-element/<name>/".
 MULTIMODAL_ELEMENTS_SERVED: set[str] = set()
 
 
 def _MultimodalElementPageFolder(name: str) -> str | None:
-    """Return the page folder of the multimodal element ``name`` inside IL's examples folder. Returns ``None`` when
-    ``name`` is not in ``_MULTIMODAL_ELEMENT_EXAMPLE_FOLDERS``, when IL was installed without its examples folder,
-    or when the folder has no ``index.html``. The examples folder sits beside the package only when IL is installed
-    in editable mode from a clone of its repository, which is how the README installs it, and a plain ``pip
-    install`` leaves it out."""
+    """Return the folder holding the ``index.html`` for ``name``, or ``None`` when this server cannot serve it. Causes
+    are an unknown ``name``, a missing ``examples`` folder in IL, a missing ``index.html``, or a VRM or Rive character
+    without any downloaded file under a listed name. IL has that ``examples`` folder only after an editable install
+    from a clone, which the README's installation steps perform."""
     import illocutionary_lifecycles
+    if name not in _MULTIMODAL_ELEMENT_EXAMPLE_FOLDERS:
+        return None
     examples = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(illocutionary_lifecycles.__file__))), "examples")
-    folder = os.path.join(examples, _MULTIMODAL_ELEMENT_EXAMPLE_FOLDERS.get(name, ""), "page")
-    return folder if name in _MULTIMODAL_ELEMENT_EXAMPLE_FOLDERS and os.path.isfile(os.path.join(folder, "index.html")) else None
+    folder = os.path.join(examples, _MULTIMODAL_ELEMENT_EXAMPLE_FOLDERS[name], "page")
+    if not os.path.isfile(os.path.join(folder, "index.html")):
+        return None
+    if name in _MULTIMODAL_ELEMENT_CHARACTER_FILES:
+        sub, script = _MULTIMODAL_ELEMENT_CHARACTER_FILES[name]
+        try:
+            with open(os.path.join(folder, script), encoding="utf-8") as f:
+                named = re.findall(r'file:\s*"([^"]+)"', f.read())
+        except OSError:
+            return None
+        if not any(os.path.isfile(os.path.join(folder, sub, n)) for n in named):
+            return None
+    return folder
 
 
 def _MultimodalElementShown(link: dict[str, Any], voice: bool) -> str:
-    """Return the name of the multimodal element a tester of the stored ``link`` sees above the chat, or an empty string
-    for none. It is shown only when the link offers voice, since it moves with the assistant's speech, and only when
-    this server found its page."""
+    """Return the ``MultimodalElement`` name testers of the stored ``link`` see in the frame above the chat, or an empty
+    string for none. Testers see the Plasma animation, VRM character or Rive character only when three conditions hold.
+    The link stores a known name, the link offers voice, since all three move with the assistant's speech, and this
+    server serves that name."""
     MultimodalElement = share.TestingLinkMultimodalElement(link)
     return MultimodalElement if voice and MultimodalElement in MULTIMODAL_ELEMENTS_SERVED else ""
 
@@ -193,10 +211,9 @@ async def share_design(request: Request):
     """Store the body's ``design`` behind a testing link, the existing one named by
     ``ConversationDesignPublicLinkToken`` or a new one, and return ``{"ConversationDesignPublicLinkToken", "link",
     "url", "ConversationDesignAPIKey", "text", "voice", "micCheck", "MultimodalElement"}``. A ``text``, ``voice`` or
-    ``micCheck`` key in the body sets that link setting to true or false, and a ``MultimodalElement`` key sets the
-    multimodal element shown above the chat, by its name or an empty string for none. The answer's
-    ``MultimodalElement`` is that name, while the design route's ``MultimodalElement`` is the page's address. A key
-    left out of the body leaves that setting as it was. ``url`` names the host the request reached, so the link
+    ``micCheck`` key in the body sets that link setting to true or false. A ``MultimodalElement`` key chooses, by name, the
+    animation or character above the chat, and an empty string or an unknown name stores none. The answer's ``MultimodalElement`` is the name the link stores. A key left out of the body leaves
+    that setting as it was. ``url`` names the host the request reached, so the link
     works for others behind a proxy that passes ``X-Forwarded-Proto`` and ``Host``. ``ConversationDesignAPIKey`` is
     the link's API key, made by this Save when the link had none. A Save that names an existing link which already
     has an API key must carry that key in the header ``X-Conversation-Design-API-Key``, so that a person who only
@@ -239,9 +256,9 @@ async def shared_design(ConversationDesignPublicLinkToken: str):
     """Return the design and label behind the testing link ``ConversationDesignPublicLinkToken``, or 404 for an unknown
     link. ``voice`` is true when the link allows voice and this server has the mount the design needs. ``text`` is
     true when the link allows text, and also whenever ``voice`` is false, so testers always have a way to talk.
-    ``micCheck`` says whether a voice start opens the microphone check first. ``MultimodalElement`` is the address
-    of the multimodal element's page shown above the chat, or an empty string for none, as
-    ``_MultimodalElementShown`` decides. It is an address here and a name in the ``/api/share`` route."""
+    ``micCheck`` says whether a voice start opens the microphone check first. ``MultimodalElement`` holds the name testers
+    see in the frame above the chat, as ``_MultimodalElementShown`` decides, or an empty string for none. Unlike the
+    ``/api/share`` answer, this value is empty whenever testers would see nothing, even if the link stores a name."""
     link = share.TestingLinkDesign(ConversationDesignPublicLinkToken)
     if link is None:
         return JSONResponse({"error": "unknown link"}, status_code=404)
@@ -249,7 +266,7 @@ async def shared_design(ConversationDesignPublicLinkToken: str):
     MultimodalElement = _MultimodalElementShown(link, voice)
     return JSONResponse({"design": link["design"], "label": link.get("label") or "", "voice": voice,
                          "text": share.TestingLinkText(link) or not voice, "micCheck": bool(link.get("mic_check")),
-                         "MultimodalElement": f"/multimodal-element/{MultimodalElement}/index.html" if MultimodalElement else ""})
+                         "MultimodalElement": MultimodalElement})
 
 
 @router.get("/api/share/{ConversationDesignPublicLinkToken}/runs")
@@ -271,8 +288,8 @@ async def capabilities():
     """Return ``{"voice", "press", "text", "MultimodalElements"}``. The first three are each true when this server can
     start that kind of conversation. ``voice`` is hands-free voice on Pipecat, ``press`` is hold-to-talk voice, and
     ``text`` is typing. The page greys out every Start button the server cannot serve. ``MultimodalElements`` lists
-    the names of the multimodal elements whose pages this server found, and the testing link window offers only
-    those."""
+    which of "plasma", "vrm" and "rive" this server serves, and the testing link window offers tiles for those
+    alone."""
     return JSONResponse({"voice": VOICE, "press": PRESS, "text": True, "MultimodalElements": sorted(MULTIMODAL_ELEMENTS_SERVED)})
 
 
@@ -393,13 +410,11 @@ def build(voice: bool = True, stt_vendor: str = "azure") -> Any:
         if os.path.isdir(os.path.join(_DIST, folder)):
             app.mount(f"/{folder}", StaticFiles(directory=os.path.join(_DIST, folder)), name=folder)
     MULTIMODAL_ELEMENTS_SERVED.clear()
-    for name in share.TESTING_LINK_MULTIMODAL_ELEMENTS:   # each multimodal element's page, served from IL's examples folder
+    for name in share.TESTING_LINK_MULTIMODAL_ELEMENTS:   # mount each servable ``index.html`` folder from IL
         folder = _MultimodalElementPageFolder(name)
         if folder:
             app.mount(f"/multimodal-element/{name}", StaticFiles(directory=folder), name=f"multimodal-element-{name}")
             MULTIMODAL_ELEMENTS_SERVED.add(name)
-        else:
-            logger.info("the multimodal element %s is off, since its page was not found in IL's examples folder", name)
     return app
 
 
