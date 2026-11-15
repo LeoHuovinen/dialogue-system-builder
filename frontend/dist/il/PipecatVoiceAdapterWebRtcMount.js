@@ -3,12 +3,13 @@
 // page, this gives too: typed turns (sendText, an RTVI client message of type "user"), the person's line, the assistant's reply
 // sentence by sentence, each word as it is said (onBotWordSaid), the phase and the level; and beyond them the assistant's audio
 // track and the raw RTVI events.
-// The Pipecat client, bundled beside this script in the page's folder, so a page needs no internet beyond the server.
-const PIPECAT_CLIENT = "./pipecat-client.js";
+// The Pipecat client and its WebRTC transport, loaded from esm.sh at pinned versions, the transport tied to the same client.
+const PIPECAT_CLIENT = "https://esm.sh/@pipecat-ai/client-js@1.13.1";
+const PIPECAT_TRANSPORT = "https://esm.sh/@pipecat-ai/small-webrtc-transport@1.10.8?deps=@pipecat-ai/client-js@1.13.1";
 
 // Call this from a click or a tap: Safari and iOS play audio and open the microphone only after a user gesture.
 export async function Connect(on, { pushToTalk = false, requestData = null } = {}) {
-  const { PipecatClient, RTVIEvent, SmallWebRTCTransport } = await import(PIPECAT_CLIENT);
+  const [{ PipecatClient, RTVIEvent }, { SmallWebRTCTransport }] = await Promise.all([import(PIPECAT_CLIENT), import(PIPECAT_TRANSPORT)]);
   const client = new PipecatClient({
     // requestData goes with the offer and reaches the server's choose(body), which may pick this session's conversation and voice.
     transport: new SmallWebRTCTransport({ webrtcRequestParams: { endpoint: `${location.origin}/api/offer`, ...(requestData ? { requestData } : {}) } }),

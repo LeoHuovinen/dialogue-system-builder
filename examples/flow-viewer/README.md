@@ -19,7 +19,7 @@ The page shows the conversation flow as it appears in the builder, one node per 
 - `flow.json` is the conversation, as the builder's Download flow writes it. IL runs it directly.
 - `page/design.json` is the design of the same conversation, as the builder's Export design writes it. Only the viewer needs it, to draw the canvas.
 - `page/flow/` and `page/chat/` are the builder's `npm run build:viewer` and `npm run build:chat`, unmodified.
-- `page/ConnectConversation.js`, the three mount scripts, `log.js`, `pipecat-client.js` and `karaoke.js` are IL's page scripts, copied from IL.
+- `page/ConnectConversation.js`, the three mount scripts, `log.js` and `karaoke.js` are IL's page scripts, copied from IL.
 - `page/text.html`, `page/press-to-speak.html` and `page/pipecat.html` are the three pages, which you can copy and change.
 
 To run your own conversation, replace `flow.json` and `page/design.json` with the two files exported from the builder.

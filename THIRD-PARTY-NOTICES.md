@@ -7,7 +7,10 @@ The MIT licence in `LICENSE` covers this repository's own code. The libraries be
 | Files | What is inside |
 |---|---|
 | the built pages in `frontend/dist/assets/`, `examples/flow-viewer/page/flow/assets/` and `examples/flow-viewer/page/chat/assets/` | `@xyflow/react` 12.11.6, `@xyflow/system` 0.0.82, `classcat` 5.0.5, `d3-color` 3.1.0, `d3-dispatch` 3.0.1, `d3-drag` 3.0.0, `d3-ease` 3.0.1, `d3-interpolate` 3.0.1, `d3-selection` 3.0.0, `d3-timer` 3.0.1, `d3-transition` 3.0.1, `d3-zoom` 3.0.0, `react` 18.3.1, `react-dom` 18.3.1, `scheduler` 0.23.2, `sonner` 1.7.4, `use-sync-external-store` 1.6.0, `zustand` 5.0.15 |
-| `pipecat-client.js` in `frontend/public/il/`, `frontend/dist/il/` and `examples/flow-viewer/page/` | `@pipecat-ai/client-js` 1.13.1, `@pipecat-ai/small-webrtc-transport`, `@daily-co/daily-js` 0.90.0, `bowser`, `events`, `lodash`, `uuid` |
+
+## Libraries loaded when a page opens
+
+`PipecatVoiceAdapterWebRtcMount.js` in `frontend/public/il/`, `frontend/dist/il/` and `examples/flow-viewer/page/` bundles nothing. When the page opens, it imports `@pipecat-ai/client-js` 1.13.1 and `@pipecat-ai/small-webrtc-transport` 1.10.8 from esm.sh, the transport built against that same client, and those bring their own dependencies, among them `@daily-co/daily-js`, `bowser`, `events`, `lodash` and `uuid`. Each stays under its own licence, and their texts are below.
 
 ## Licence texts
 
